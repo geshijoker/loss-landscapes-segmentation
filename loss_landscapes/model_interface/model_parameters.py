@@ -307,14 +307,19 @@ def rand_n_like(example_vector: ModelParameters) -> ModelParameters:
     return ModelParameters(new_vector)
 
 
-def orthogonal_to(vector: ModelParameters) -> ModelParameters:
+def orthogonal_to(vector: ModelParameters, random='uniform') -> ModelParameters:
     """
     Create a new ModelParameters object of size and shape compatible with the given
     example vector, such that the two vectors are very nearly orthogonal.
     :param vector: original vector
     :return: new vector that is very nearly orthogonal to original vector
     """
-    new_vector = rand_u_like(vector)
+    if random == 'uniform':
+        new_vector = rand_u_like(vector)
+    elif random == 'normal':
+        new_vector = rand_n_like(vector)
+    else:
+        raise AttributeError('Unsupported random argument. Supported values are uniform and normal')
     new_vector = new_vector - new_vector.dot(vector) * vector / math.pow(vector.model_norm(2), 2)
     return new_vector
 

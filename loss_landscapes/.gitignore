@@ -1,0 +1,7 @@
+*.pyc
+*.DS_Store
+*.pth
+*.pdf
+loss_landscapes.egg-info/
+build/
+data/

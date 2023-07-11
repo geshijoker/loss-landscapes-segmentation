@@ -41,8 +41,11 @@ produce a surface plot alike to the one in section 1.
 This is accomplished as follows:
 
 ````python
-metric = Loss(loss_function, X, y)
-landscape = random_plane(model, metric, normalize='filter')
+pll = loss_landscapes.PlanarLossLandscape(model, steps, deepcopy_model=True)
+pll.random_plane(distance=5, normalization='filter', random='normal')
+pll.stats_initializer()
+metric = loss_landscapes.metrics.Loss(criterion, x, y)
+landscape = pll.compute(metric)
 ````
 
 As seen in the example above, the two core concepts in `loss-landscapes` are _metrics_ and _parameter subspaces_. The
@@ -125,37 +128,38 @@ method for action selection. Then, the example from section 2 becomes as follows
 ````python
 metric = ExpectedReturnMetric(env, n_samples)
 agent_wrapper = GeneralModelWrapper(agent, [agent.q_function, agent.policy], lambda agent, x: agent.act(x))
-landscape = random_plane(agent_wrapper, metric, normalize='filter')
 ````
 
 
+## 5. Batch-Normalization: Solving the NaN Error
+The NaN error may occur when there exists a batchnormalization layer in the model and the distance is comparabally large. The main cause of the problem is the the perturbed model adopt the same running statistics of the original model. However, these running statistics are not able to normalize the previous layer's output close to normal distribution, that is, "0 mean and 1 variance". To address the NaN error, we explicitly update the running statistics of every perturbed model by calling `warm_up()` before `compute()`. The following code snippet is an example:
 
-## 5. WIP: Connecting Paths, Saddle Points, and Trajectory Tracking
-A number of features are currently under development, but as of yet incomplete.
+````python
+pll = loss_landscapes.PlanarLossLandscape(model, steps, deepcopy_model=True)
+pll.random_plane(distance=5, normalization='filter', random='normal')
+pll.stats_initializer()
+metric = loss_landscapes.metrics.Loss(criterion, x, y)
+pll.warm_up(metric)
+landscape = pll.compute(metric)
+````
 
-A number of papers in recent years have shown that loss landscapes of neural networks are dominated by a
-proliferation of saddle points, that good solutions are better described as large low-loss plateaus than as
-"well-bottom" points, and that for sufficiently high-dimensional networks, a low-loss path in parameter space can
-be found between almost any arbitrary pair of minima. In the future, the `loss-landscapes` library will feature 
-implementations of algorithms for finding such low-loss connecting paths in the loss landscape, as well as tools to
-facilitate the study of saddle points.
+## 5. Loss Landscape on an Entire Dataset Instead of a Mini-batch
+The original code base does not support change the computing device and only able to compute the loss of a mini-batch of data. We design the loss landscape computation tool to support easy deployment on GPU and evaluation on the entire dataset instead of just on mini-batches. We implemented `eval_warm_up()` and `eval_loss()` to do `warmup` and `compute` on a `Torch::DataLoader` in [core-features-modified.ipynb](examples/core-features-modified.ipynb). The example from section 2 for a  becomes as follows:  
 
-Some sort of trajectory tracking features are also under consideration, though at the time it's unclear what this
-should actually mean, as the optimization trajectory is implicitly tracked by the user's training loop. Any metric
-along the optimization trajectory can be tracked with libraries such as [ignite](https://github.com/pytorch/ignite)
-for PyTorch.
+````python
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+train_loader = torch.utils.data.DataLoader(mnist_train, batch_size=BATCH_SIZE, shuffle=False)
 
-
-## 6. Support for Other DL Libraries
-The `loss-landscapes` library was initially designed to be agnostic to the DL framework in use. However, with the
-increasing number of use cases to cover it became obvious that maintaining the original library-agnostic design
-was adding too much complexity to the code.
-
-A TensorFlow version, `loss-landscapes-tf`, is planned for the future.
+pll = loss_landscapes.PlanarLossLandscape(model, steps, deepcopy_model=True)
+pll.random_plane(distance=5, normalization='filter', random='normal')
+pll.stats_initializer()
+eval_warm_up(pll, train_loader, device, criterion)
+landscape = eval_loss(pll, train_loader, device, criterion)
+````
 
 
 ## 7. Installation and Use
-The package is available on PyPI. Install using `pip install loss-landscapes`. To use the library, import as follows:
+Please install the package in editable mode. Install using `pip install -e .`. To use the library, import as follows:
 
 ````python
 import loss_landscapes

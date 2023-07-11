@@ -1,6 +1,8 @@
 """ Class used to define interface to complex models """
 
 import abc
+import typing
+import copy
 import itertools
 import torch.nn
 from loss_landscapes.model_interface.model_parameters import ModelParameters
@@ -15,6 +17,23 @@ class ModelWrapper(abc.ABC):
 
     def get_module_parameters(self) -> ModelParameters:
         return ModelParameters([p for module in self.modules for p in module.parameters()])
+
+    def get_module_running_stats(self) -> typing.List[dict]:
+        running_stats = []
+        for module in self.modules:
+            states = dict(module.state_dict())
+            params = dict(module.named_parameters())
+            stats_dict = { name : states[name] for name in set(states) - set(params) }
+            running_stats.append(stats_dict)
+        return running_stats
+
+    def load_module_running_stats(self, running_stats: typing.List[dict]):
+        for i in range(len(self.modules)):
+            module = self.modules[i]
+            stats_dict = running_stats[i]
+            for name, param in module.state_dict().items():
+                if name in stats_dict:
+                    param.copy_(copy.deepcopy(stats_dict[name]))
 
     def get_module_parameters_rmbn2(self):
         parameters = []
@@ -75,6 +94,7 @@ class SimpleModelWrapper(ModelWrapper):
 
     def forward(self, x):
         return self.modules[0](x)
+
 
 class GeneralModelWrapper(ModelWrapper):
     def __init__(self, model, modules: list, forward_fn):
