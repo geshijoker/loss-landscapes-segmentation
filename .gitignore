@@ -21,3 +21,12 @@ build/
 
 # tests
 tests/
+
+*-ubyte
+*.gz
+*.pyc
+*.DS_Store
+*.pth
+loss_landscapes.egg-info/
+
+**/__pycache__/
