@@ -61,7 +61,15 @@ class LossLandscape(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def outer_warm_up(self):
+        pass
+
+    @abc.abstractmethod
     def compute(self):
+        pass
+
+    @abc.abstractmethod
+    def outer_compute(self):
         pass
 
 class LinearLossLandscape(LossLandscape):
@@ -100,7 +108,38 @@ class LinearLossLandscape(LossLandscape):
         end_model_wrapper = wrap_model(copy.deepcopy(model_end) if self.deepcopy_model else model_end)
         self.direction = (end_model_wrapper.get_module_parameters() - self.start_point) / self.steps
 
-    def random_line(self, distance=0.1, normalization='filter', random='uniform'):
+    def precomputed(self, direction: ModelParameters, distance: float, normalization='filter', centered=True):
+        """
+        The linear subspace of the parameter space defined by precomputed direction and distance.
+
+        Given a user defined direction and distance, draw loss landscape a long the line towards the direction.
+
+        :param direction: the precomputed direction given by the user
+        :param distance: maximum distance in parameter space from the start point
+        :param normalization: normalization of direction other, must be one of 'filter', 'layer', 'model'
+        :param centered: boolean value defines if the start point should be located at the center or corner
+        """
+        self.direction = copy.deepcopy(direction)
+
+        if normalization == 'model':
+            self.direction.model_normalize_(self.start_point)
+        elif normalization == 'layer':
+            self.direction.layer_normalize_(self.start_point)
+        elif normalization == 'filter':
+            self.direction.filter_normalize_(self.start_point)
+        elif normalization is None:
+            pass
+        else:
+            raise AttributeError('Unsupported normalization argument. Supported values are model, layer, and filter')
+
+        self.direction.mul_(((self.start_point.model_norm() * distance) / self.steps) / self.direction.model_norm())
+        # Move start point so that original start params will be in the center of the plot
+        if centered==True:
+            self.direction.mul_(self.steps / 2)
+            self.start_point.sub_(self.direction)
+            self.direction.truediv_(self.steps / 2)
+
+    def random_line(self, distance: float, normalization='filter', random='uniform', centered=True):
         """
         The linear subspace of the parameter space defined by a start point and a randomly sampled direction.
 
@@ -149,8 +188,16 @@ class LinearLossLandscape(LossLandscape):
             raise AttributeError('Unsupported normalization argument. Supported values are model, layer, and filter')
 
         self.direction.mul_(((self.start_point.model_norm() * distance) / self.steps) / self.direction.model_norm())
+        # Move start point so that original start params will be in the center of the plot
+        if centered==True:
+            self.direction.mul_(self.steps / 2)
+            self.start_point.sub_(self.direction)
+            self.direction.truediv_(self.steps / 2)
 
-    def stats_initializer(self):
+    def stats_initializer(self, running_stats: typing.Union[None, typing.List[dict]] = None):
+        if running_stats is not None:
+            self.running_stats = running_stats
+            return
         self.model_start_running_stats = self.model_start_wrapper.get_module_running_stats()
         self.running_stats = [copy.deepcopy(self.model_start_running_stats) for _ in range(self.steps)]
 
@@ -159,7 +206,8 @@ class LinearLossLandscape(LossLandscape):
         :param metric: function of form evaluation_f(model), used to evaluate model loss
         """
         # initilize the running statistics for all steps
-        self.stats_initializer()
+        if hasattr(LinearLossLandscape, 'running_stats'):
+            raise AttributeError('Running stats is not either initialized or precomputed. Call stats_initializer() first')
         self.model_start_wrapper.train()
         # Work on a copy of model wrapper to avoid changing the parameters of default model_start_wrapper
         model_start_wrapper = copy.deepcopy(self.model_start_wrapper)
@@ -171,6 +219,28 @@ class LinearLossLandscape(LossLandscape):
             model_start_wrapper.load_module_running_stats(self.running_stats[i])
             metric(model_start_wrapper)
             self.running_stats[i]=copy.deepcopy(model_start_wrapper.get_module_running_stats())
+
+    def outer_warm_up(self, pos: int, outer_func: typing.Callable):
+        """
+        The function that calls outer_func to collect running statistics at position pos
+        :param pos: the 0-indexed indicator of which running statistics to update
+        :param outer_func: function used to call forward path of model
+        """
+        # initilize the running statistics for all steps
+        if hasattr(LinearLossLandscape, 'running_stats'):
+            raise AttributeError('Running stats is not either initialized or precomputed. Call stats_initializer() first')
+        assert pos<self.steps, f'The specified running statistics at {pos} is greater than the setup {self.steps}'
+
+        self.model_start_wrapper.train()
+        # Work on a copy of model wrapper to avoid changing the parameters of default model_start_wrapper
+        model_start_wrapper = copy.deepcopy(self.model_start_wrapper)
+        start_point = model_start_wrapper.get_module_parameters()
+        for i in range(pos+1):
+            # add a step along the line to the model parameters, then evaluate
+            start_point.add_(self.direction)
+        model_start_wrapper.load_module_running_stats(self.running_stats[i])
+        outer_func(model_start_wrapper)
+        self.running_stats[i]=copy.deepcopy(model_start_wrapper.get_module_running_stats())
 
     def compute(self, metric: Metric) -> np.ndarray:
         """
@@ -192,6 +262,27 @@ class LinearLossLandscape(LossLandscape):
 
         return np.array(data_values)
 
+    def outer_compute(self, pos: int, outer_func: typing.Callable) -> float:
+        """
+        The function that calls outer_func to evaluate loss at position pos
+        :param pos: the 0-indexed indicator of which running statistics to load and evalutate loss
+        :param outer_func: function used to evaluate the loss of model
+        :return: loss value at pos
+        """
+        if hasattr(LinearLossLandscape, 'running_stats'):
+            raise AttributeError('Running stats is not either initialized or precomputed. Call stats_initializer() first')
+        assert pos<self.steps, f'The specified running statistics at {pos} is over the limit of {self.steps}'
+
+        self.model_start_wrapper.eval()
+        model_start_wrapper = copy.deepcopy(self.model_start_wrapper)
+        start_point = model_start_wrapper.get_module_parameters()
+        # set the model wrapper into eval mode to load pretrained models and running statistics
+        data_values = []
+        for i in range(pos+1):
+            # add a step along the line to the model parameters, then evaluate
+            start_point.add_(self.direction)
+        model_start_wrapper.load_module_running_stats(self.running_stats[pos])
+        return outer_func(model_start_wrapper)
 
 class PlanarLossLandscape(LossLandscape):
     """
@@ -239,7 +330,48 @@ class PlanarLossLandscape(LossLandscape):
         self.dir_one = (model_end_one_wrapper.get_module_parameters() - self.start_point) / self.steps
         self.dir_two = (model_end_two_wrapper.get_module_parameters() - self.start_point) / self.steps
 
-    def random_plane(self, distance=1, normalization='filter', random='uniform'):
+    def precomputed(self, dir_one: ModelParameters, dir_two: ModelParameters, distance: float, normalization='filter', centered=True):
+        """
+        The planar subspace of the parameter space defined by two precomputed direction and distance.
+
+        Given a user defined direction and distance, draw loss landscape the plain defined by two directions.
+
+        :param dir_one: the precomputed direction 1 given by the user
+        :param dir_two: the precomputed direction 2 given by the user
+        :param distance: maximum distance in parameter space from the start point
+        :param normalization: normalization of direction other, must be one of 'filter', 'layer', 'model'
+        :param centered: boolean value defines if the start point should be located at the center or corner
+        """
+        self.dir_one = copy.deepcopy(dir_one)
+        self.dir_two = copy.deepcopy(dir_two)
+
+        if normalization == 'model':
+            self.dir_one.model_normalize_(self.start_point)
+            self.dir_two.model_normalize_(self.start_point)
+        elif normalization == 'layer':
+            self.dir_one.layer_normalize_(self.start_point)
+            self.dir_two.layer_normalize_(self.start_point)
+        elif normalization == 'filter':
+            self.dir_one.filter_normalize_(self.start_point)
+            self.dir_two.filter_normalize_(self.start_point)
+        elif normalization is None:
+            pass
+        else:
+            raise AttributeError('Unsupported normalization argument. Supported values are model, layer, and filter')
+
+        # scale to match steps and total distance
+        self.dir_one.mul_(((self.start_point.model_norm() * distance) / self.steps) / self.dir_one.model_norm())
+        self.dir_two.mul_(((self.start_point.model_norm() * distance) / self.steps) / self.dir_two.model_norm())
+        # Move start point so that original start params will be in the center of the plot
+        if centered==True:
+            self.dir_one.mul_(self.steps / 2)
+            self.dir_two.mul_(self.steps / 2)
+            self.start_point.sub_(self.dir_one)
+            self.start_point.sub_(self.dir_two)
+            self.dir_one.truediv_(self.steps / 2)
+            self.dir_two.truediv_(self.steps / 2)
+
+    def random_plain(self, distance: float, normalization='filter', random='uniform', centered=True):
         """
         :param distance: maximum distance in parameter space from the start point
         :param normalization: normalization of direction other, must be one of 'filter', 'layer', 'model'
@@ -298,14 +430,18 @@ class PlanarLossLandscape(LossLandscape):
         self.dir_one.mul_(((self.start_point.model_norm() * distance) / self.steps) / self.dir_one.model_norm())
         self.dir_two.mul_(((self.start_point.model_norm() * distance) / self.steps) / self.dir_two.model_norm())
         # Move start point so that original start params will be in the center of the plot
-        self.dir_one.mul_(self.steps / 2)
-        self.dir_two.mul_(self.steps / 2)
-        self.start_point.sub_(self.dir_one)
-        self.start_point.sub_(self.dir_two)
-        self.dir_one.truediv_(self.steps / 2)
-        self.dir_two.truediv_(self.steps / 2)
+        if centered==True:
+            self.dir_one.mul_(self.steps / 2)
+            self.dir_two.mul_(self.steps / 2)
+            self.start_point.sub_(self.dir_one)
+            self.start_point.sub_(self.dir_two)
+            self.dir_one.truediv_(self.steps / 2)
+            self.dir_two.truediv_(self.steps / 2)
 
-    def stats_initializer(self):
+    def stats_initializer(self, running_stats: typing.Union[None, typing.List[typing.List[dict]]] = None):
+        if running_stats is not None:
+            self.running_stats = running_stats
+            return
         self.model_start_running_stats = self.model_start_wrapper.get_module_running_stats()
         self.running_stats = []
         for _ in range(self.steps):
@@ -316,7 +452,8 @@ class PlanarLossLandscape(LossLandscape):
         :param metric: function of form evaluation_f(model), used to evaluate model loss
         """
         # initilize the running statistics for all steps
-        self.stats_initializer()
+        if hasattr(PlanarLossLandscape, 'running_stats'):
+            raise AttributeError('Running stats is not either initialized or precomputed. Call stats_initializer() first')
         self.model_start_wrapper.train()
         # Work on a copy of model wrapper to avoid changing the parameters of default model_start_wrapper
         model_start_wrapper = copy.deepcopy(self.model_start_wrapper)
@@ -336,6 +473,52 @@ class PlanarLossLandscape(LossLandscape):
                     model_start_wrapper.load_module_running_stats(self.running_stats[i][self.steps-j-1])
                     metric(model_start_wrapper)
                     self.running_stats[i][self.steps-j-1]=copy.deepcopy(model_start_wrapper.get_module_running_stats())
+            start_point.add_(self.dir_one)
+
+    def outer_warm_up(self, pos_i: int, pos_j: int, outer_func: typing.Callable):
+        """
+        The function that calls outer_func to collect running statistics at position pos
+        :param pos_i: the 0-indexed row indicator of which running statistics to update
+        :param pos_j: the 0-indexed column indicator of which running statistics to update
+        :param outer_func: function used to call forward path of model
+        """
+        # initilize the running statistics for all steps
+        if hasattr(PlanarLossLandscape, 'running_stats'):
+            raise AttributeError('Running stats is not either initialized or precomputed. Call stats_initializer() first')
+        assert pos_i<self.steps, f'The specified running statistics at {pos_i} is over the limit of {self.steps}'
+        assert pos_j<self.steps, f'The specified running statistics at {pos_j} is over the limit of {self.steps}'
+        
+        self.model_start_wrapper.train()
+        # Work on a copy of model wrapper to avoid changing the parameters of default model_start_wrapper
+        model_start_wrapper = copy.deepcopy(self.model_start_wrapper)
+        start_point = model_start_wrapper.get_module_parameters()
+        # Z tranversal of the first pos_i-1 rows which are all complete tranversal of columns
+        for i in range(pos_i):
+            for j in range(self.steps):
+            # for every other column, reverse the order in which the column is generated
+                # so you can easily use in-place operations to move along dir_two
+                if i % 2 == 0:
+                    start_point.add_(self.dir_two)
+                else:
+                    start_point.sub_(self.dir_two)
+            start_point.add_(self.dir_one)
+        # Z tranversal to the last row which is an incomplete tranversal of columns
+        if pos_i % 2 == 0:
+            for j in range(pos_j):
+                start_point.add_(self.dir_two)
+        else:
+            for j in range(self.steps-pos_j-1):
+                start_point.sub_(self.dir_two)
+
+        # update and save the running statistics
+        if pos_i % 2 == 0:
+            model_start_wrapper.load_module_running_stats(self.running_stats[pos_i][pos_j])
+            outer_func(model_start_wrapper)
+            self.running_stats[pos_i][pos_j]=copy.deepcopy(model_start_wrapper.get_module_running_stats())
+        else:
+            model_start_wrapper.load_module_running_stats(self.running_stats[pos_i][self.steps-pos_j-1])
+            outer_func(model_start_wrapper)
+            self.running_stats[pos_i][self.steps-j-1]=copy.deepcopy(model_start_wrapper.get_module_running_stats())
 
     def compute(self, metric: Metric) -> np.ndarray:
         """
@@ -372,6 +555,49 @@ class PlanarLossLandscape(LossLandscape):
 
         return np.array(data_matrix)
 
+    def outer_compute(self, pos_i: int, pos_j: int, outer_func: typing.Callable) -> float:
+        """
+        The function that calls outer_func to evluate losses at position (pos_i, pos_j)
+        :param pos_i: the 0-indexed row indicator of which loss to update
+        :param pos_j: the 0-indexed column indicator of which loss to update
+        :param outer_func: function used to evaluate the loss of model
+        :return: loss value at (pos_i, pos_j)
+        """
+        # initilize the running statistics for all steps
+        if hasattr(PlanarLossLandscape, 'running_stats'):
+            raise AttributeError('Running stats is not either initialized or precomputed. Call stats_initializer() first')
+        assert pos_i<self.steps, f'The specified running statistics at {pos_i} is over the limit of {self.steps}'
+        assert pos_j<self.steps, f'The specified running statistics at {pos_j} is over the limit of {self.steps}'
+
+        self.model_start_wrapper.eval()
+        model_start_wrapper = copy.deepcopy(self.model_start_wrapper)
+        start_point = model_start_wrapper.get_module_parameters()
+
+        # Z tranversal of the first pos_i-1 rows which are all complete tranversal of columns
+        for i in range(pos_i):
+            for j in range(self.steps):
+            # for every other column, reverse the order in which the column is generated
+                # so you can easily use in-place operations to move along dir_two
+                if i % 2 == 0:
+                    start_point.add_(self.dir_two)
+                else:
+                    start_point.sub_(self.dir_two)
+            start_point.add_(self.dir_one)
+        # Z tranversal to the last row which is an incomplete tranversal of columns
+        if pos_i % 2 == 0:
+            for j in range(pos_j):
+                start_point.add_(self.dir_two)
+        else:
+            for j in range(self.steps-pos_j-1):
+                start_point.sub_(self.dir_two)
+
+        # call function to evalute loss
+        if pos_i % 2 == 0:
+            model_start_wrapper.load_module_running_stats(self.running_stats[pos_i][pos_j])
+            return outer_func(model_start_wrapper)
+        else:
+            model_start_wrapper.load_module_running_stats(self.running_stats[pos_i][self.steps-pos_j-1])
+            return outer_func(model_start_wrapper)
 
 # # todo add hypersphere function
 # def random_plane_rmbn2(model: typing.Union[torch.nn.Module, ModelWrapper], metric: Metric, distance=1, steps=20,
