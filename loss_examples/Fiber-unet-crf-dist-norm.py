@@ -55,7 +55,7 @@ output_params = {
 # Hyper-parameters
 val_images = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/val/img/"
 val_annotations = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/val/ann/"
-batch_size=1
+batch_size=64
 classes = ('background', 'foreground')
 n_classes = len(classes)
 n_workers = 0
@@ -73,7 +73,7 @@ RANDOM = "normal"
 NUM_ITER = 64
 
 # Device
-device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 ### define model
 x = torch.rand(1, 3, 288, 288)
@@ -178,6 +178,18 @@ criterion = torch.nn.CrossEntropyLoss(reduction='mean')
 x, y = iter(dataloader).__next__()
 metric = loss_landscapes.metrics.Loss(criterion, x.to(device), y.to(device))
 
+### generate universal random directions
+base_model_wrapper = wrap_model(copy.deepcopy(unet))
+base_point = base_model_wrapper.get_module_parameters()
+
+if RANDOM == "uniform":
+    base_dir_one = rand_u_like(base_point) 
+elif RANDOM == "normal":
+    base_dir_one = rand_n_like(base_point) 
+else:
+    raise AttributeError('Unsupported random argument. Supported values are uniform and normal')
+base_dir_two = orthogonal_to(base_dir_one, RANDOM)
+
 # batch evaluation loop
 def eval_warm_up(losslandscaper, data_loader, device, criterion):
     with torch.no_grad():
@@ -207,14 +219,14 @@ def eval_loss(losslandscaper, data_loader, device, criterion):
     return loss_data
 
 ### define settings to try
-try_distance = [0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000, 3000, 1e4, 3*1e4, 1e5]
+try_distance = [0.1, 0.3, 1, 3, 10, 30, 100, 300]#, 1000, 3000, 1e4, 3*1e4, 1e5]
 try_normalization = ['filter', 'layer', 'model']
 
 ### set up for plotting
 n_rows = len(try_distance)
 n_cols = len(try_normalization)
 
-fig = plt.figure(figsize=(12, 4*n_rows))
+fig = plt.figure(figsize=(4*n_cols, 4*n_rows))
 fig.patch.set_facecolor('white')
 fig.patch.set_alpha(1.0)
 
@@ -227,10 +239,52 @@ def refined_loss(loss):
 ### loop over normalization and distance parmaeters
 for i,normalization in enumerate(try_normalization):
     for j,distance in enumerate(try_distance):
+        start_time = time.time()
+        print(f"start distance {distance}")
+
+        model_start_wrapper = wrap_model(copy.deepcopy(unet))
+        start_point = model_start_wrapper.get_module_parameters()
+
+        model_dir1_wrapper = wrap_model(copy.deepcopy(unet))
+        dir1_point = model_dir1_wrapper.get_module_parameters()
+
+        model_dir2_wrapper = wrap_model(copy.deepcopy(unet))
+        dir2_point = model_dir2_wrapper.get_module_parameters()
+
+        dir_one = copy.deepcopy(base_dir_one)
+        dir_two = copy.deepcopy(base_dir_two)
+
+        if normalization == 'model':
+            dir_one.model_normalize_(start_point)
+            dir_two.model_normalize_(start_point)
+        elif normalization == 'layer':
+            dir_one.layer_normalize_(start_point)
+            dir_two.layer_normalize_(start_point)
+        elif normalization == 'filter':
+            dir_one.filter_normalize_(start_point)
+            dir_two.filter_normalize_(start_point)
+        elif normalization is None:
+            pass
+        else:
+            raise AttributeError('Unsupported normalization argument. Supported values are model, layer, and filter')
+
+        # scale to match steps and total distance
+        dir_one.mul_(((start_point.model_norm() * distance) / STEPS) / dir_one.model_norm())
+        dir_two.mul_(((start_point.model_norm() * distance) / STEPS) / dir_two.model_norm())
+        # Move start point so that original start params will be in the center of the plot
+        dir_one.mul_(STEPS / 2)
+        dir_two.mul_(STEPS / 2)
+        # Move the start point to dir_end end and dir_two end
+        start_point.sub_(dir_one)
+        start_point.sub_(dir_two)
+        dir1_point.sub_(dir_one)
+        dir1_point.add_(dir_two)
+        dir2_point.add_(dir_one)
+        dir2_point.sub_(dir_two)
             
         ### compute random projections and loss
-        pll = loss_landscapes.PlanarLossLandscape(model, STEPS, deepcopy_model=True)
-        pll.random_plane(distance, normalization, random=RANDOM)
+        pll = loss_landscapes.PlanarLossLandscape(model_start_wrapper, STEPS, deepcopy_model=True)
+        pll.interpolation(model_dir1_wrapper, model_dir2_wrapper)
         pll.stats_initializer()
         eval_warm_up(pll, dataloader, device, criterion)
         loss_data_fin = eval_loss(pll, dataloader, device, criterion)
@@ -250,10 +304,12 @@ for i,normalization in enumerate(try_normalization):
         
         # finalize
         ax.set_title(f'(distance={distance}, normalization="{normalization}")', fontweight='bold')
-
+        
+        end_time = time.time()
+        print(f"end distance {distance}, take time {end_time-start_time}")
 
 ### finalize figure
 plt.tight_layout()
-plt.savefig(f"dist-norm-fiber-unet-crf-random-{RANDOM}.pdf", dpi=150)
+plt.savefig(f"dist-norm-fiber-unet-crf-{RANDOM}-filter-backbone.pdf", dpi=150)
 plt.close()
 # plt.show()

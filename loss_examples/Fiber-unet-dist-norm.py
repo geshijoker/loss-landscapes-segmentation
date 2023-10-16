@@ -9,9 +9,9 @@ import numpy as np
 import h5py
 
 import torch
-import torch.nn
+from torch import nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, Subset
+from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 from tqdm import tqdm
 
@@ -25,10 +25,9 @@ from loss_landscapes.model_interface.model_parameters import rand_u_like, rand_n
 
 sys.path.append("/global/u2/g/geshi/Scientific_Segmentation/src")
 # sys.path.append("/global/homes/g/geshi/.local/perlmutter/3.9-anaconda-2021.11/lib/python3.9/site-packages/cv2")
-from models import SegmentationNet, CrfRnnNet
+from models import SegmentationNet
 from data_utils.input_pipeline import FiberSegDataset
 from converter import print_model_h5_wegiths, inspect_pytorch_model, load_h5_params
-from crfasrnn.params import DenseCRFParams
 
 # model architecture hyperparameters
 downward_params = {
@@ -55,7 +54,7 @@ output_params = {
 # Hyper-parameters
 val_images = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/val/img/"
 val_annotations = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/val/ann/"
-batch_size=1
+batch_size=64
 classes = ('background', 'foreground')
 n_classes = len(classes)
 n_workers = 0
@@ -70,23 +69,13 @@ read_image_type=1
 # contour plot resolution
 STEPS = 20
 RANDOM = "normal"
-NUM_ITER = 64
 
 # Device
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ### define model
 x = torch.rand(1, 3, 288, 288)
-crf_init_params = DenseCRFParams(
-    alpha=160.0,
-    beta=3.0,
-    gamma=3.0,
-    spatial_ker_weight=1.0,
-    bilateral_ker_weight=1.0,
-)
-
-unet = SegmentationNet(downward_params, upward_params, output_params)
-model = CrfRnnNet(unet, num_labels=output_params['n_classes'], num_iterations=10, crf_init_params=crf_init_params)
+model = SegmentationNet(downward_params, upward_params, output_params)
 out = model(x)
 print('output shape', out.shape)
 
@@ -94,61 +83,56 @@ model = model.to(device)
 model.eval()
 
 # load keras weights
-keras_weights_file = '/global/cfs/projectdirs/m636/Vis4ML/Fiber/unet_quarter_intern/crf/unet_crf__quarter_fiber_run3.h5'
+keras_weights_file = '/global/cfs/projectdirs/m636/Vis4ML/Fiber/unet_quarter_intern/non_crf/unet_crf_non_crf_quarter_fiber.h5'
 model_param_dict = inspect_pytorch_model(model, verbose=False)
 
 # gamma and beta correspond to weight and bias, respectively.
 keras2torch_layers= {
-    'conv2d':'net.encoder.blocks.0.conv_proj.conv_proj.0',
-    'conv2d_1':'net.encoder.blocks.0.conv_proj.conv_proj.3',
-    'conv2d_2':'net.encoder.blocks.1.conv_proj.conv_proj.0',
-    'conv2d_3':'net.encoder.blocks.1.conv_proj.conv_proj.3',
-    'conv2d_4':'net.encoder.blocks.2.conv_proj.conv_proj.0',
-    'conv2d_5':'net.encoder.blocks.2.conv_proj.conv_proj.3',
-    'conv2d_6':'net.encoder.blocks.3.conv_proj.conv_proj.0',
-    'conv2d_7':'net.encoder.blocks.3.conv_proj.conv_proj.3',
-    'conv2d_8':'net.decoder.blocks.0.conv_proj.conv_proj.0',
-    'conv2d_9':'net.decoder.blocks.0.conv_proj.conv_proj.3',
-    'conv2d_10':'net.decoder.blocks.1.conv_proj.conv_proj.0',
-    'conv2d_11':'net.decoder.blocks.1.conv_proj.conv_proj.3',
-    'conv2d_12':'net.decoder.blocks.2.conv_proj.conv_proj.0',
-    'conv2d_13':'net.decoder.blocks.2.conv_proj.conv_proj.3',
-    'conv2d_14':'net.decoder.blocks.3.conv_proj.conv_proj.0',
-    'conv2d_15':'net.decoder.blocks.3.conv_proj.conv_proj.3',
-    'conv2d_16':'net.decoder.conv_proj.conv_proj.0',
-    'conv2d_17':'net.decoder.conv_proj.conv_proj.3',
-    'conv2d_18':'net.classifier.classifier',
-    'batch_normalization':'net.encoder.blocks.0.conv_proj.conv_proj.2',
-    'batch_normalization_1':'net.encoder.blocks.0.conv_proj.conv_proj.5',
-    'batch_normalization_2':'net.encoder.blocks.1.conv_proj.conv_proj.2',
-    'batch_normalization_3':'net.encoder.blocks.1.conv_proj.conv_proj.5',
-    'batch_normalization_4':'net.encoder.blocks.2.conv_proj.conv_proj.2',
-    'batch_normalization_5':'net.encoder.blocks.2.conv_proj.conv_proj.5',
-    'batch_normalization_6':'net.encoder.blocks.3.conv_proj.conv_proj.2',
-    'batch_normalization_7':'net.encoder.blocks.3.conv_proj.conv_proj.5',
-    'batch_normalization_8':'net.decoder.blocks.0.conv_proj.conv_proj.2',
-    'batch_normalization_9':'net.decoder.blocks.0.conv_proj.conv_proj.5',
-    'batch_normalization_10':'net.decoder.blocks.1.conv_proj.conv_proj.2',
-    'batch_normalization_11':'net.decoder.blocks.1.conv_proj.conv_proj.5',
-    'batch_normalization_12':'net.decoder.blocks.2.conv_proj.conv_proj.2',
-    'batch_normalization_13':'net.decoder.blocks.2.conv_proj.conv_proj.5',
-    'batch_normalization_14':'net.decoder.blocks.3.conv_proj.conv_proj.2',
-    'batch_normalization_15':'net.decoder.blocks.3.conv_proj.conv_proj.5',
-    'batch_normalization_16':'net.decoder.conv_proj.conv_proj.2',
-    'batch_normalization_17':'net.decoder.conv_proj.conv_proj.5',
-    'batch_normalization_18':'bn',
-    'crfrnn':'crfrnn',
+    'conv2d':'encoder.blocks.0.conv_proj.conv_proj.0',
+    'conv2d_1':'encoder.blocks.0.conv_proj.conv_proj.3',
+    'conv2d_2':'encoder.blocks.1.conv_proj.conv_proj.0',
+    'conv2d_3':'encoder.blocks.1.conv_proj.conv_proj.3',
+    'conv2d_4':'encoder.blocks.2.conv_proj.conv_proj.0',
+    'conv2d_5':'encoder.blocks.2.conv_proj.conv_proj.3',
+    'conv2d_6':'encoder.blocks.3.conv_proj.conv_proj.0',
+    'conv2d_7':'encoder.blocks.3.conv_proj.conv_proj.3',
+    'conv2d_8':'decoder.blocks.0.conv_proj.conv_proj.0',
+    'conv2d_9':'decoder.blocks.0.conv_proj.conv_proj.3',
+    'conv2d_10':'decoder.blocks.1.conv_proj.conv_proj.0',
+    'conv2d_11':'decoder.blocks.1.conv_proj.conv_proj.3',
+    'conv2d_12':'decoder.blocks.2.conv_proj.conv_proj.0',
+    'conv2d_13':'decoder.blocks.2.conv_proj.conv_proj.3',
+    'conv2d_14':'decoder.blocks.3.conv_proj.conv_proj.0',
+    'conv2d_15':'decoder.blocks.3.conv_proj.conv_proj.3',
+    'conv2d_16':'decoder.conv_proj.conv_proj.0',
+    'conv2d_17':'decoder.conv_proj.conv_proj.3',
+    'conv2d_18':'classifier.classifier',
+    'batch_normalization':'encoder.blocks.0.conv_proj.conv_proj.2',
+    'batch_normalization_1':'encoder.blocks.0.conv_proj.conv_proj.5',
+    'batch_normalization_2':'encoder.blocks.1.conv_proj.conv_proj.2',
+    'batch_normalization_3':'encoder.blocks.1.conv_proj.conv_proj.5',
+    'batch_normalization_4':'encoder.blocks.2.conv_proj.conv_proj.2',
+    'batch_normalization_5':'encoder.blocks.2.conv_proj.conv_proj.5',
+    'batch_normalization_6':'encoder.blocks.3.conv_proj.conv_proj.2',
+    'batch_normalization_7':'encoder.blocks.3.conv_proj.conv_proj.5',
+    'batch_normalization_8':'decoder.blocks.0.conv_proj.conv_proj.2',
+    'batch_normalization_9':'decoder.blocks.0.conv_proj.conv_proj.5',
+    'batch_normalization_10':'decoder.blocks.1.conv_proj.conv_proj.2',
+    'batch_normalization_11':'decoder.blocks.1.conv_proj.conv_proj.5',
+    'batch_normalization_12':'decoder.blocks.2.conv_proj.conv_proj.2',
+    'batch_normalization_13':'decoder.blocks.2.conv_proj.conv_proj.5',
+    'batch_normalization_14':'decoder.blocks.3.conv_proj.conv_proj.2',
+    'batch_normalization_15':'decoder.blocks.3.conv_proj.conv_proj.5',
+    'batch_normalization_16':'decoder.conv_proj.conv_proj.2',
+    'batch_normalization_17':'decoder.conv_proj.conv_proj.5',
 }
 keras2torch_params = {
     'gamma:0':'weight',
-    'beta:0':'bias',
-    'kernel:0':'weight',
-    'bias:0':'bias',
-    'moving_mean:0':'running_mean',
-    'moving_variance:0':'running_var',
-    'bilateral_ker_weights:0':'bilateral_ker_weights',
-    'spatial_ker_weights:0':'spatial_ker_weights',
-    'compatibility_matrix:0':'compatibility_matrix',
+    'beta:0': 'bias',
+    'kernel:0': 'weight',
+    'bias:0': 'bias',
+    'moving_mean:0': 'running_mean',
+    'moving_variance:0': 'running_var',
 }
 
 # load the final pretrained model
@@ -169,10 +153,27 @@ dataset = FiberSegDataset(val_images, val_annotations, n_classes,
     other_inputs_paths=other_inputs_paths, preprocessing=preprocessing, 
     read_image_type=read_image_type, ignore_segs=False)
 
-dataloader = DataLoader(Subset(dataset, range(NUM_ITER)), batch_size=batch_size, shuffle=False, num_workers=n_workers)
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=n_workers)
 
 # define criterion
-criterion = torch.nn.CrossEntropyLoss(reduction='mean')
+class DiceLoss(nn.Module):
+    def __init__(self, softmax=False):
+        super(DiceLoss, self).__init__()
+        self.softmax = softmax
+        self.smooth = 1e-7
+
+    def forward(self, pred, target):
+        if self.softmax:
+            pred = F.softmax(pred,1)
+        pred_flat = pred.contiguous().view(-1)
+        true_flat = target.contiguous().view(-1)
+        intersection = (pred_flat * true_flat).sum()
+        union = torch.sum(pred_flat) + torch.sum(true_flat)
+        
+        return 1 - ((2. * intersection + self.smooth) / (union + self.smooth) )
+
+criterion = DiceLoss(True)
+# criterion = nn.CrossEntropyLoss(reduction='mean')
 
 ### Get a small batch of data
 x, y = iter(dataloader).__next__()
@@ -190,36 +191,8 @@ else:
     raise AttributeError('Unsupported random argument. Supported values are uniform and normal')
 base_dir_two = orthogonal_to(base_dir_one, RANDOM)
 
-# batch evaluation loop
-def eval_warm_up(losslandscaper, data_loader, device, criterion):
-    with torch.no_grad():
-        for count, batch in enumerate(data_loader, 0):
-            x, y = batch
-            x = x.to(device)
-            y = y.to(device)
-            
-            metric = loss_landscapes.metrics.Loss(criterion, x, y)
-            losslandscaper.warm_up(metric)
-            
-def eval_loss(losslandscaper, data_loader, device, criterion):
-    count = 0
-    loss_data = 0.
-    with torch.no_grad():
-        for count, batch in enumerate(data_loader, 0):
-            x, y = batch
-            x = x.to(device)
-            y = y.to(device)
-            batch_size = x.shape[0]
-            
-            metric = loss_landscapes.metrics.Loss(criterion, x, y)
-            batch_loss_data = losslandscaper.compute(metric)
-            
-            loss_data = count/(count+batch_size)*loss_data + batch_size/(count+batch_size)*batch_loss_data
-            count+=batch_size
-    return loss_data
-
 ### define settings to try
-try_distance = [0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000, 3000, 1e4, 3*1e4, 1e5]
+try_distance = [0.1, 0.3, 1, 3, 10, 30, 100, 300]#, 1000, 3000, 1e4, 3*1e4, 1e5]
 try_normalization = ['filter', 'layer', 'model']
 
 ### set up for plotting
@@ -284,8 +257,8 @@ for i,normalization in enumerate(try_normalization):
         pll = loss_landscapes.PlanarLossLandscape(model_start_wrapper, STEPS, deepcopy_model=True)
         pll.interpolation(model_dir1_wrapper, model_dir2_wrapper)
         pll.stats_initializer()
-        eval_warm_up(pll, dataloader, device, criterion)
-        loss_data_fin = eval_loss(pll, dataloader, device, criterion)
+        pll.warm_up(metric)
+        loss_data_fin = pll.compute(metric)
         loss_data_fin = refined_loss(loss_data_fin)
         
         ### plot stuff
@@ -306,6 +279,6 @@ for i,normalization in enumerate(try_normalization):
 
 ### finalize figure
 plt.tight_layout()
-plt.savefig(f"dist-norm-fiber-unet-crf-{RANDOM}.pdf", dpi=150)
+plt.savefig(f"dist-norm-fiber-unet-{RANDOM}-dice.pdf", dpi=150)
 plt.close()
 # plt.show()

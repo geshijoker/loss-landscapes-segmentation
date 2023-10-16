@@ -1,2 +1,0 @@
-nohup: ignoring input
-output shape torch.Size([1, 2, 288, 288])
