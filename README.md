@@ -42,7 +42,7 @@ This is accomplished as follows:
 
 ````python
 pll = loss_landscapes.PlanarLossLandscape(model, steps, deepcopy_model=True)
-pll.random_plane(distance=5, normalization='filter', random='normal')
+pll.random_plain(distance=5, normalization='filter', random='normal')
 pll.stats_initializer()
 metric = loss_landscapes.metrics.Loss(criterion, x, y)
 landscape = pll.compute(metric)
@@ -136,7 +136,7 @@ The NaN error may occur when there exists a batchnormalization layer in the mode
 
 ````python
 pll = loss_landscapes.PlanarLossLandscape(model, steps, deepcopy_model=True)
-pll.random_plane(distance=5, normalization='filter', random='normal')
+pll.random_plain(distance=5, normalization='filter', random='normal')
 pll.stats_initializer()
 metric = loss_landscapes.metrics.Loss(criterion, x, y)
 pll.warm_up(metric)
@@ -151,7 +151,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 train_loader = torch.utils.data.DataLoader(mnist_train, batch_size=BATCH_SIZE, shuffle=False)
 
 pll = loss_landscapes.PlanarLossLandscape(model, steps, deepcopy_model=True)
-pll.random_plane(distance=5, normalization='filter', random='normal')
+pll.random_plain(distance=5, normalization='filter', random='normal')
 pll.stats_initializer()
 eval_warm_up(pll, train_loader, device, criterion)
 landscape = eval_loss(pll, train_loader, device, criterion)
