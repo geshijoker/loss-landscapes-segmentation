@@ -22,7 +22,7 @@ from segmentationCRF import metrics
 from segmentationCRF.models import UNet
 from segmentationCRF.data_utils import get_datset, get_default_transforms
 from segmentationCRF.utils import check_make_dir
-from segmentationCRF import test_Fiber
+from segmentationCRF import test
 from segmentationCRF.crfseg import CRF
 
 """

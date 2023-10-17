@@ -18,14 +18,14 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 from tqdm import tqdm, trange
 
-from pyhessian.utils import * # get the dataset
-from pyhessian import hessian # Hessian computation
-from pyhessian.density_plot import get_esd_plot, density_generate # ESD plot
+from pyhessian.utils import *
+from pyhessian import hessian, get_esd_plot, density_generate # ESD plot
 
-from segmentationCRF.metrics import IOULoss, DiceLoss
+from segmentationCRF import metrics
 from segmentationCRF.models import UNet
 from segmentationCRF.data_utils import get_datset, get_default_transforms
-from segmentationCRF import test_Fiber
+from segmentationCRF.utils import check_make_dir
+from segmentationCRF import test
 from segmentationCRF.crfseg import CRF
 
 # define, load and parse argument
@@ -56,28 +56,6 @@ else:
         device = torch.device("cuda") 
 print('Using device: {}'.format(device))
 
-# model architecture hyperparameters
-downward_params = {
-    'in_channels': 3, 
-    'emb_sizes': [64, 128, 256, 512], 
-    'kernel_sizes': [3, 3, 3 ,3 ,3], 
-    'paddings': [1, 1, 1, 1, 1], 
-    'batch_norm_first': False,
-}
-upward_params = {
-    'in_channels': [512, 1536, 768, 384, 192],
-    'emb_sizes': [1024, 512, 256, 128, 64], 
-    'out_channels': [1024, 512, 256, 128, 64],
-    'kernel_sizes': [3, 3, 3, 3, 3], 
-    'paddings': [1, 1, 1, 1, 1], 
-    'batch_norm_first': False, 
-    'bilinear': True,
-}
-output_params = {
-    'in_channels': 64,
-    'n_classes': 2,
-}
-
 # Hyper-parameters
 train_images = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/train/img/"
 train_annotations = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/train/ann/"
@@ -93,12 +71,37 @@ output_height = 288
 output_width = 288
 read_image_type=1
 
+data_transform, target_transform = get_default_transforms('fiber')
+
+# model architecture hyperparameters
+downward_params = {
+    'in_channels': 3, 
+    'emb_sizes': [32, 64, 128, 256, 512], 
+    'out_channels': [32, 64, 128, 256, 512],
+    'kernel_sizes': [3, 3, 3 ,3 ,3], 
+    'paddings': [1, 1, 1, 1, 1], 
+    'batch_norm_first': False,
+}
+upward_params = {
+    'in_channels': [512, 1024, 512, 256, 128],
+    'emb_sizes': [1024, 512, 256, 128, 64], 
+    'out_channels': [512, 256, 128, 64, 32],
+    'kernel_sizes': [3, 3, 3, 3, 3], 
+    'paddings': [1, 1, 1, 1, 1], 
+    'batch_norm_first': False, 
+    'bilinear': True,
+}
+output_params = {
+    'in_channels': 64,
+    'n_classes': n_classes,
+}
+
 # contour plot resolution
 STEPS = 20
 RANDOM = 'normal'
 NORM = 'layer'
 DIST = 1.0
-MODEL_DIR = args.model # '/global/cfs/cdirs/m636/geshi/exp/crf/CrossEntropy/0_seed_243'
+MODEL_DIR = args.model # '/global/cfs/cdirs/m636/geshi/exp/Fiber/crf/CrossEntropy/0_seed_9999'
 trained_on = MODEL_DIR.split('/')[-2]
 seed = MODEL_DIR.split('/')[-1]
 
@@ -119,23 +122,38 @@ model = model.to(device)
 model.eval()
 
 # Define dataset and load data
-data_transform = transforms.Compose([
-    transforms.ToTensor(),
-    ])
 
-target_transform = transforms.Compose([
-    transforms.ToTensor(),
-    ])
+dataset_parameters = {
+    'images': train_images,
+    'annotations': train_annotations,
+    'n_classes': n_classes,
+    'n_workers': n_workers,
+    'input_height': input_height,
+    'input_width': input_width,
+    'output_height': output_height,
+    'output_width': output_width,
+    'data_transform': data_transform,
+    'target_transform': target_transform,
+    'read_image_type': read_image_type,
+    'ignore_segs': ignore_segs,
+}
+dataset = get_datset('fiber', dataset_parameters)
 
-dataset = FiberSegDataset(train_images, train_annotations, n_classes, 
-    input_height, input_width, output_height, output_width,
-    transform=data_transform, target_transform = target_transform,
-    read_image_type=read_image_type, ignore_segs=False)
-
-val_dataset = FiberSegDataset(val_images, val_annotations, n_classes, 
-    input_height, input_width, output_height, output_width,
-    transform=data_transform, target_transform = target_transform,
-    read_image_type=read_image_type, ignore_segs=False)
+dataset_parameters = {
+    'images': val_images,
+    'annotations': val_annotations,
+    'n_classes': n_classes,
+    'n_workers': n_workers,
+    'input_height': input_height,
+    'input_width': input_width,
+    'output_height': output_height,
+    'output_width': output_width,
+    'data_transform': data_transform,
+    'target_transform': target_transform,
+    'read_image_type': read_image_type,
+    'ignore_segs': ignore_segs,
+}
+val_dataset = get_datset('fiber', dataset_parameters)
 
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=n_workers)
 val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=n_workers)
@@ -159,7 +177,7 @@ try_models = try_models[:1]
 # Test the performance of the optimal pretrained model
 checkpoint = torch.load(os.path.join(MODEL_DIR, try_models[0]), map_location=device)
 model.load_state_dict(checkpoint['model_state_dict'])
-test_Fiber(model, val_dataloader, classes, device)
+test(model, val_dataloader, classes, device)
 
 # Pac Bayes
 # optimal_dist = _pacbayes_sigma(

@@ -25,13 +25,14 @@ from loss_landscapes.model_interface.model_wrapper import ModelWrapper, wrap_mod
 from loss_landscapes.model_interface.model_parameters import ModelParameters, rand_u_like, rand_n_like, orthogonal_to
 from loss_landscapes.contrib.functions import SimpleWarmupCaller, SimpleLossEvalCaller, log_refined_loss
 
-from pyhessian.utils import * # get the dataset
-from pyhessian import hessian # Hessian computation
+from pyhessian.utils import *
+from pyhessian import hessian
 
 from segmentationCRF.metrics import IOULoss, DiceLoss
 from segmentationCRF.models import UNet
 from segmentationCRF.data_utils import get_datset, get_default_transforms
-from segmentationCRF import test_Fiber
+from segmentationCRF.utils import check_make_dir
+from segmentationCRF import test
 from segmentationCRF.crfseg import CRF
 
 # define, load and parse argument
@@ -62,28 +63,6 @@ else:
         device = torch.device("cuda") 
 print('Using device: {}'.format(device))
 
-# model architecture hyperparameters
-downward_params = {
-    'in_channels': 3, 
-    'emb_sizes': [64, 128, 256, 512], 
-    'kernel_sizes': [3, 3, 3 ,3 ,3], 
-    'paddings': [1, 1, 1, 1, 1], 
-    'batch_norm_first': False,
-}
-upward_params = {
-    'in_channels': [512, 1536, 768, 384, 192],
-    'emb_sizes': [1024, 512, 256, 128, 64], 
-    'out_channels': [1024, 512, 256, 128, 64],
-    'kernel_sizes': [3, 3, 3, 3, 3], 
-    'paddings': [1, 1, 1, 1, 1], 
-    'batch_norm_first': False, 
-    'bilinear': True,
-}
-output_params = {
-    'in_channels': 64,
-    'n_classes': 2,
-}
-
 # Hyper-parameters
 train_images = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/train/img/"
 train_annotations = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/train/ann/"
@@ -101,12 +80,37 @@ other_inputs_paths=None
 preprocessing=None
 read_image_type=1
 
+data_transform, target_transform = get_default_transforms('fiber')
+
+# model architecture hyperparameters
+downward_params = {
+    'in_channels': 3, 
+    'emb_sizes': [32, 64, 128, 256, 512], 
+    'out_channels': [32, 64, 128, 256, 512],
+    'kernel_sizes': [3, 3, 3 ,3 ,3], 
+    'paddings': [1, 1, 1, 1, 1], 
+    'batch_norm_first': False,
+}
+upward_params = {
+    'in_channels': [512, 1024, 512, 256, 128],
+    'emb_sizes': [1024, 512, 256, 128, 64], 
+    'out_channels': [512, 256, 128, 64, 32],
+    'kernel_sizes': [3, 3, 3, 3, 3], 
+    'paddings': [1, 1, 1, 1, 1], 
+    'batch_norm_first': False, 
+    'bilinear': True,
+}
+output_params = {
+    'in_channels': 64,
+    'n_classes': n_classes,
+}
+
 # contour plot resolution
 STEPS = 20
 RANDOM = 'normal'
 NORM = 'layer'
 DIST = 1.0
-MODEL_DIR = args.model # '/global/cfs/cdirs/m636/geshi/exp/crf/CrossEntropy/0_seed_243'
+MODEL_DIR = args.model # '/global/cfs/cdirs/m636/geshi/exp/Fiber/crf/CrossEntropy/0_seed_9999'
 trained_on = MODEL_DIR.split('/')[-2]
 seed = MODEL_DIR.split('/')[-1]
 use_hessian = False
@@ -128,23 +132,37 @@ model = model.to(device)
 model.eval()
 
 # Define dataset and load data
-data_transform = transforms.Compose([
-    transforms.ToTensor(),
-    ])
+dataset_parameters = {
+    'images': train_images,
+    'annotations': train_annotations,
+    'n_classes': n_classes,
+    'n_workers': n_workers,
+    'input_height': input_height,
+    'input_width': input_width,
+    'output_height': output_height,
+    'output_width': output_width,
+    'data_transform': data_transform,
+    'target_transform': target_transform,
+    'read_image_type': read_image_type,
+    'ignore_segs': ignore_segs,
+}
+dataset = get_datset('fiber', dataset_parameters)
 
-target_transform = transforms.Compose([
-    transforms.ToTensor(),
-    ])
-
-dataset = FiberSegDataset(train_images, train_annotations, n_classes, 
-    input_height, input_width, output_height, output_width,
-    transform=data_transform, target_transform = target_transform,
-    read_image_type=read_image_type, ignore_segs=False)
-
-val_dataset = FiberSegDataset(val_images, val_annotations, n_classes, 
-    input_height, input_width, output_height, output_width,
-    transform=data_transform, target_transform = target_transform,
-    read_image_type=read_image_type, ignore_segs=False)
+dataset_parameters = {
+    'images': val_images,
+    'annotations': val_annotations,
+    'n_classes': n_classes,
+    'n_workers': n_workers,
+    'input_height': input_height,
+    'input_width': input_width,
+    'output_height': output_height,
+    'output_width': output_width,
+    'data_transform': data_transform,
+    'target_transform': target_transform,
+    'read_image_type': read_image_type,
+    'ignore_segs': ignore_segs,
+}
+val_dataset = get_datset('fiber', dataset_parameters)
 
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=n_workers)
 val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=n_workers)
@@ -227,9 +245,6 @@ fig.patch.set_alpha(1.0)
 X = np.array([[j for j in range(STEPS)] for i in range(STEPS)])
 Y = np.array([[i for _ in range(STEPS)] for i in range(STEPS)])
 
-def refined_loss(loss):
-    return np.log(1.+loss)
-
 ### loop over normalization and distance parmaeters
 for i,criterion in enumerate(try_criterions):
     for j,model_name in enumerate(try_models):
@@ -252,7 +267,7 @@ for i,criterion in enumerate(try_criterions):
         loss_data = pll.compute(metric)
         print('compute time cost ', time.time()-since)
 
-        loss_data_fin = refined_loss(loss_data)
+        loss_data_fin = log_refined_loss(loss_data)
         
         ### plot stuff
         # update subplot index

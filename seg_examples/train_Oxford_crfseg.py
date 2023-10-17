@@ -36,7 +36,7 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -c examples/checkpoints.npy -e /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy -n 2 -a unet -l ce -s 234 -p 0.1 -g 1 --benchmark --verbose
+python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -c seg_examples/checkpoints.npy -e /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy -n 2 -a unet -l ce -s 234 -p 0.1 -g 1 --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')

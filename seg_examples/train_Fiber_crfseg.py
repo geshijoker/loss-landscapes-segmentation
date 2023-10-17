@@ -26,7 +26,7 @@ import torchvision
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Subset
 
-from segmentationCRF import metrics
+from segmentationCRF.metrics import IOULoss, DiceLoss
 from segmentationCRF.models import UNet
 from segmentationCRF.data_utils import get_datset, get_default_transforms
 from segmentationCRF.utils import check_make_dir

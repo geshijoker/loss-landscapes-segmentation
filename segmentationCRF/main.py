@@ -11,7 +11,7 @@ from tqdm import tqdm, trange
 from segmentationCRF import metrics
 from segmentationCRF.utils import EPS
 
-def train_Fiber(model, dataloader, num_classes, criterion, optimizer, scheduler, num_epochs, device, start_epoch=0, writer=None):
+def train(model, dataloader, num_classes, criterion, optimizer, scheduler, num_epochs, device, start_epoch=0, writer=None):
     since = time.time()
     model.train()   # Set model to evaluate mode
     
@@ -70,7 +70,7 @@ def train_Fiber(model, dataloader, num_classes, criterion, optimizer, scheduler,
     
     return model
 
-def test_Fiber(model, dataloader, classes, device):
+def test(model, dataloader, classes, device):
     since = time.time()
     model.eval()   # Set model to evaluate mode
     corrects = 0

@@ -24,3 +24,4 @@ import os
 
 from .utils import group_product, group_add, normalization, get_params_grad, hessian_vector_product, orthnormal
 from .hessian import hessian
+from .density_plot import get_esd_plot, density_generate
