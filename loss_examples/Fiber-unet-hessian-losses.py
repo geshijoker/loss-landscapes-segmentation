@@ -35,6 +35,10 @@ from segmentationCRF.utils import check_make_dir
 from segmentationCRF import test
 from segmentationCRF.crfseg import CRF
 
+"""
+python loss_examples/Fiber-unet-hessian-losses.py -m /global/cfs/cdirs/m636/geshi/exp/Fiber/crf/CrossEntropy/0_seed_9999 -a unet-crf -s 9999 -g 0
+"""
+
 # define, load and parse argument
 parser = argparse.ArgumentParser(description='Do Checkpoints X Losses plot')
 parser.add_argument('--model', '-m', type=str, required=True,
@@ -68,7 +72,7 @@ train_images = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/train/img/"
 train_annotations = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/train/ann/"
 val_images = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/val/img/"
 val_annotations = "/global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter/val/ann/"
-batch_size=16
+batch_size=32
 classes = ('background', 'foreground')
 n_classes = len(classes)
 n_workers = 0
@@ -76,8 +80,7 @@ input_height = 288
 input_width = 288
 output_height = 288
 output_width = 288
-other_inputs_paths=None
-preprocessing=None
+ignore_segs = False
 read_image_type=1
 
 data_transform, target_transform = get_default_transforms('fiber')
@@ -186,7 +189,7 @@ try_models = try_models[:1]
 # Test the performance of the optimal pretrained model
 checkpoint = torch.load(os.path.join(MODEL_DIR, try_models[0]), map_location=device)
 model.load_state_dict(checkpoint['model_state_dict'])
-res = test_UNet(model, val_dataloader, classes, device)
+res = test(model, val_dataloader, classes, device)
 print(res)
 
 # Pac Bayes
@@ -289,7 +292,7 @@ for i,criterion in enumerate(try_criterions):
 ### finalize figure
 plt.tight_layout()
 # plt.savefig(f"iter-criterion-use_hessian-{use_hessian}-fiber-{args.architecture}-{trained_on}-{seed}.pdf", dpi=150)
-plt.savefig(f"fiber-use_hessian-{use_hessian}-{args.architecture}-{trained_on}-{seed}.pdf", dpi=150)
+plt.savefig(f"loss_examples/fiber-use_hessian-{use_hessian}-{args.architecture}-{trained_on}-{seed}.pdf", dpi=150)
 
 plt.close()
 # plt.show()
