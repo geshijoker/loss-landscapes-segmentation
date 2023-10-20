@@ -26,10 +26,11 @@ import torchvision
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Subset
 
-from segmentationCRF.metrics import IOULoss, DiceLoss
+from segmentationCRF import metrics
 from segmentationCRF.models import UNet
 from segmentationCRF.data_utils import get_datset, get_default_transforms
 from segmentationCRF.utils import check_make_dir
+from segmentationCRF import train_epoch, test
 from segmentationCRF.crfseg import CRF
 
 """
@@ -41,7 +42,7 @@ parser = argparse.ArgumentParser(description='Model training')
 parser.add_argument('--data', '-d', type=str, required=True,
                     help='data folder to load data')
 parser.add_argument('--checkpoints', '-c', type=str, required=True,
-                    help='npy file that save the list of iterations to make checkpoints')
+                    help='npy file that save the list of epochs to make checkpoints')
 parser.add_argument('--experiment', '-e', type=str, required=True,
                     help='name of the experiment')
 parser.add_argument('--name', '-n', type=str, required=True, 
@@ -58,6 +59,20 @@ parser.add_argument('--percentage', '-p', type=float, default=1.0,
                     help='the percentage of data used for training')
 parser.add_argument('--gpu', '-g', type=int, default=0,
                     help='which GPU to use, only when disable-cuda not specified')
+parser.add_argument('--learning_rate', '-lr', type=int, default=0.001,
+                    help='the learning rate of training')
+parser.add_argument('--batch_size', '-bs', type=int, default=32,
+                    help='the batch size of the data')
+parser.add_argument('--arc_depth', '-ad', type=int, default=5,
+                    help='the depth of the model')
+parser.add_argument('--arc_width', '-aw', type=int, default=32,
+                    help='the width of the model')
+parser.add_argument('--input_size', '-ip', type=int, default=288,
+                    help='the size of input')
+parser.add_argument('--test_while_train', '-t', action='store_true',
+                    help='using test while train')
+parser.add_argument('--data_parallel', '-dp', action='store_true',
+                    help='using data parallel')
 parser.add_argument('--benchmark', action='store_true',
                     help='using benchmark algorithms')
 parser.add_argument('--debug', action='store_true',
@@ -110,13 +125,22 @@ if args.debug:
     torch.autograd.set_detect_anomaly(True)
 else:
     torch.autograd.set_detect_anomaly(False)
+    
+lr = args.learning_rate
+input_size = args.input_size
+batch_size=args.batch_size
+arc_width = args.arc_width
+arc_depth = args.arc_depth
+lr = args.learning_rate
+test_while_train = args.test_while_train
 
 writer = SummaryWriter(log_path)
 
 # /global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter
 train_images = os.path.join(args.data, "train/img/")
 train_annotations = os.path.join(args.data, "train/ann/")
-batch_size=32
+test_images = os.path.join(args.data, "val/img/")
+test_annotations = os.path.join(args.data, "val/ann/")
 classes = ('background', 'foreground')
 n_classes = len(classes)
 n_workers = 0
@@ -130,20 +154,20 @@ ignore_segs = False
 percentage = args.percentage
 assert percentage>0 and percentage<=1, "The percentage is out of range of (0, 1)"
 
-data_transform, target_transform = get_default_transforms('fiber')
+data_transform, target_transform = get_default_transforms('fiber', input_size)
 
 downward_params = {
     'in_channels': 3, 
-    'emb_sizes': [32, 64, 128, 256, 512], 
-    'out_channels': [32, 64, 128, 256, 512],
+    'emb_sizes': [1, 2, 4, 8, 16], 
+    'out_channels': [1, 2, 4, 8, 16],
     'kernel_sizes': [3, 3, 3 ,3 ,3], 
     'paddings': [1, 1, 1, 1, 1], 
     'batch_norm_first': False,
 }
 upward_params = {
-    'in_channels': [512, 1024, 512, 256, 128],
-    'emb_sizes': [1024, 512, 256, 128, 64], 
-    'out_channels': [512, 256, 128, 64, 32],
+    'in_channels': [16, 32, 16, 8, 4],
+    'emb_sizes': [32, 16, 8, 4, 2], 
+    'out_channels': [16, 8, 4, 2, 1],
     'kernel_sizes': [3, 3, 3, 3, 3], 
     'paddings': [1, 1, 1, 1, 1], 
     'batch_norm_first': False, 
@@ -153,6 +177,13 @@ output_params = {
     'in_channels': 64,
     'n_classes': n_classes,
 }
+
+downward_params['emb_sizes'] = [downward_params['emb_sizes'][i]*arc_width for i in range(min(len(downward_params['emb_sizes']), arc_depth))]
+downward_params['out_channels'] = [downward_params['out_channels'][i]*arc_width for i in range(min(len(downward_params['out_channels']), arc_depth))]
+upward_params['in_channels'] = [upward_params['in_channels'][i]*arc_width for i in range(min(len(upward_params['in_channels']), arc_depth))]
+upward_params['emb_sizes'] = [upward_params['emb_sizes'][i]*arc_width for i in range(min(len(upward_params['emb_sizes']), arc_depth))]
+upward_params['out_channels'] = [upward_params['out_channels'][i]*arc_width for i in range(min(len(upward_params['out_channels']), arc_depth))]
+output_params['in_channels'] = [output_params['in_channels'][i]*arc_width for i in range(min(len(output_params['in_channels']), arc_depth))]
 
 x = torch.rand(batch_size, 3, input_height, input_width)
 
@@ -182,12 +213,20 @@ dataset_parameters = {
     'ignore_segs': ignore_segs,
 }
 
-dataset = get_datset('fiber', dataset_parameters)
-num = int(round(len(dataset)*percentage))
+train_set = get_datset('fiber', dataset_parameters)
+num = int(round(len(train_set)*percentage))
 selected = list(range(num))
-dataset = Subset(dataset, selected)
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
+trainset = Subset(train_set, selected)
+train_loader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
 
+if test_while_train:
+    dataset_parameters['images'] = test_images
+    dataset_parameters['annotations'] = test_annotations
+    test_set = get_datset('fiber', dataset_parameters)
+    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=n_workers)
+
+if args.data_parallel:
+    model= nn.DataParallel(model)
 model = model.to(device)
 
 if args.loss == 'iou':
@@ -203,12 +242,8 @@ else:
     print(f'{args.loss} not supported, use default CrossEntropyLoss')
     criterion = nn.CrossEntropyLoss() 
 
-optimizer = optim.AdamW(model.parameters(), lr=1e-3)
+optimizer = optim.AdamW(model.parameters(), lr=lr)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=20)
-
-since = time.time()
-model.train()   # Set model to evaluate mode
-start_epoch = 0
 
 def save_checkpoint(checkpoint):
     utctime = datetime.datetime.now(datetime.timezone.utc).strftime("%m-%d-%Y-%H:%M:%S")
@@ -218,67 +253,40 @@ def save_checkpoint(checkpoint):
         'scheduler_state_dict': scheduler.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'rng_state': torch.get_rng_state(),
-        'iteration': checkpoint,
+        'epoch': checkpoint,
         }, model_path)
 
 save_checkpoint(0)
 
 print('Starting training loop; initial compile can take a while...')
+since = time.time()
+model.train()   # Set model to evaluate mode
+start_epoch = 0
+
 pbar = trange(num_epochs, desc='Epoch', unit='epoch', initial=start_epoch, position=0)
 # Iterate over data.
 for epoch in pbar:
-    running_loss = 0.0
-    running_iou = 0.0
-    running_dice = 0.0
-    running_corrects = 0
-    count = 0
+    model, epoch_loss, epoch_acc, train_stats = train_epoch(model, train_loader, n_classes, criterion, optimizer, scheduler, device)
+    if test_while_train:
+        cl_wise_iou, test_stats = test(model, test_loader, n_classes, device)
 
-    piter = tqdm(dataloader, desc='Batch', unit='batch', position=1, leave=False)
-    for i, (inputs, seg_masks) in enumerate(piter):
+    if writer:
+        writer.add_scalars('train_stats', train_stats, epoch)
+        if test_while_train:
+            writer.add_scalars('test_stats', test_stats, epoch)
+            for cl_i in range(len(cl_wise_iou)):
+                writer.add_scalar(f'class {classes[cl_i]} iou', cl_wise_iou[cl_i])
 
-        inputs = inputs.to(device)
-        seg_masks = seg_masks.to(device)
-        _, targets = torch.max(seg_masks, 1)
-        batch_size = inputs.size(0)
+    pbar.set_postfix(loss = epoch_loss, acc = epoch_acc)
         
-        count += batch_size
-        cur_iter = epoch * len(piter) + i
-        # zero the parameter gradients
-        optimizer.zero_grad()
+    if epoch+1 in checkpoints:
+        save_checkpoint(epoch)
 
-        outputs = model(inputs)
-        _, preds = torch.max(outputs, 1)
-        loss = criterion(outputs, seg_masks)
-        # loss = criterion(outputs, targets)
+    pbar.set_postfix(loss = epoch_loss, acc=100. * epoch_acc)
 
-        loss.backward()
-        optimizer.step()
-
-        # statistics
-        running_loss += loss.item() * batch_size
-        running_iou += metrics.iou_coef(targets.flatten(), preds.flatten(), n_classes).item() * batch_size
-        running_dice += metrics.dice_coef(targets.flatten(), preds.flatten(), n_classes).item() * batch_size
-        running_corrects += ((preds == targets).sum()/np.prod(preds.size())).item() * batch_size
-        
-        if cur_iter in checkpoints:
-            save_checkpoint(cur_iter)
-
-    scheduler.step()
-    epoch_loss = running_loss / count
-    epoch_iou = running_iou / count
-    epoch_dice = running_dice / count
-    epoch_acc = running_corrects / count
-
-    if writer is not None:
-        writer.add_scalar('train loss', epoch_loss, epoch)
-        writer.add_scalar('train iou', epoch_iou, epoch)
-        writer.add_scalar('train dice', epoch_dice, epoch)
-        writer.add_scalar('train acc', 100. * epoch_acc, epoch)
-
-    pbar.set_postfix(loss = epoch_loss, acc=100. * epoch_acc, iou = epoch_iou, dice = epoch_dice)
-
+save_checkpoint(num_epochs)
 time_elapsed = time.time() - since
-print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, last epoch loss: {epoch_loss}, acc: {100. * epoch_acc}, Iou: {epoch_iou}, Dice: {epoch_dice}')
+print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, last epoch loss: {epoch_loss}, acc: {100. * epoch_acc}')
 
 writer.flush()
 writer.close()

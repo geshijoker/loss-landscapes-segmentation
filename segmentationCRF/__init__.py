@@ -1,1 +1,1 @@
-from .main import train, test
+from .main import train, train_epoch, test

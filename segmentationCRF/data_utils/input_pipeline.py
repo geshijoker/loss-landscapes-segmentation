@@ -128,12 +128,14 @@ def get_datset(dataset_name, dataset_parameters):
         raise ValueError("Dataset {} is not supported".format(dataset_name))
 
 
-def get_default_transforms(dataset_name):
+def get_default_transforms(dataset_name, size):
     if dataset_name=='fiber':
         data_transform = transforms.Compose([
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.ToTensor(),
             ])
         target_transform = transforms.Compose([
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.ToTensor(),
             ])
     elif dataset_name=='oxford':
@@ -143,6 +145,7 @@ def get_default_transforms(dataset_name):
         data_transform = transforms.Compose([
             transforms.Resize(256, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.CenterCrop(224),
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.ToTensor(),
             transforms.Normalize(data_mean, data_std)
         ])
@@ -150,6 +153,7 @@ def get_default_transforms(dataset_name):
         target_transform = transforms.Compose([
             transforms.Resize(256, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.CenterCrop(224),
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.ToTensor(),
             OneHotTransform(3),
         ])

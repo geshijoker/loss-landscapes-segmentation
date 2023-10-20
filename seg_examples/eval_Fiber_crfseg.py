@@ -41,6 +41,8 @@ parser.add_argument('--seed', '-s', type=int, default=None,
                     help='which seed for random number generator to use')
 parser.add_argument('--gpu', '-g', type=int, default=0,
                     help='which GPU to use, only when disable-cuda not specified')
+parser.add_argument('--data_parallel', '-dp', action='store_true',
+                    help='using data parallel')
 parser.add_argument('--benchmark', action='store_true',
                     help='using benchmark algorithms')
 parser.add_argument('--debug', action='store_true',
@@ -150,6 +152,8 @@ dataset_parameters = {
 dataset = get_datset('fiber', dataset_parameters)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=n_workers)
 
+if args.data_parallel:
+    model= nn.DataParallel(model)
 model = model.to(device)
 
 checkpoint = torch.load(model_path, map_location=device)
