@@ -35,14 +35,12 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Fiber_crfseg.py -d /global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter -c seg_examples/checkpoints.npy -e /global/cfs/cdirs/m636/geshi/exp/Fiber/crf/CrossEntropy -n 0 -a unet-crf -l ce -s 9999 -p 0.1 -g 0 --benchmark --verbose
+python seg_examples/train_Fiber_crfseg.py -d /global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter -e /global/cfs/cdirs/m636/geshi/exp/Fiber/crf/CrossEntropy -n 0 -a unet-crf -l ce -s 9999 -p 0.1 -g 0 -f 1 -ne 2 -lr 0.0001 -bs 128 -ad 5 -aw 32 -ip 288 -t -dp --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
 parser.add_argument('--data', '-d', type=str, required=True,
                     help='data folder to load data')
-parser.add_argument('--checkpoints', '-c', type=str, required=True,
-                    help='npy file that save the list of epochs to make checkpoints')
 parser.add_argument('--experiment', '-e', type=str, required=True,
                     help='name of the experiment')
 parser.add_argument('--name', '-n', type=str, required=True, 
@@ -59,7 +57,11 @@ parser.add_argument('--percentage', '-p', type=float, default=1.0,
                     help='the percentage of data used for training')
 parser.add_argument('--gpu', '-g', type=int, default=0,
                     help='which GPU to use, only when disable-cuda not specified')
-parser.add_argument('--learning_rate', '-lr', type=int, default=0.001,
+parser.add_argument('--frequency', '-f', type=int, default=0,
+                    help='for every # epochs to save checkpoints')
+parser.add_argument('--num_epochs', '-ne', type=int, default=15,
+                    help='the number of epochs for training')
+parser.add_argument('--learning_rate', '-lr', type=float, default=0.0001,
                     help='the learning rate of training')
 parser.add_argument('--batch_size', '-bs', type=int, default=32,
                     help='the batch size of the data')
@@ -82,10 +84,6 @@ parser.add_argument('--verbose', action='store_true',
 
 # load and parse argument
 args = parser.parse_args()
-
-checkpoints = np.load(args.checkpoints)
-assert checkpoints.ndim==1, 'The loaded checkpoints is not a 1D array'
-print(checkpoints)
 
 if args.gpu<0 or not torch.cuda.is_available():
     device = torch.device('cpu')
@@ -133,6 +131,10 @@ arc_width = args.arc_width
 arc_depth = args.arc_depth
 lr = args.learning_rate
 test_while_train = args.test_while_train
+frequency = args.frequency
+num_epochs = args.num_epochs
+percentage = args.percentage
+assert percentage>0 and percentage<=1, "The percentage is out of range of (0, 1)"
 
 writer = SummaryWriter(log_path)
 
@@ -149,10 +151,7 @@ input_width = 288
 output_height = 288
 output_width = 288
 read_image_type=1
-num_epochs = 15
 ignore_segs = False
-percentage = args.percentage
-assert percentage>0 and percentage<=1, "The percentage is out of range of (0, 1)"
 
 data_transform, target_transform = get_default_transforms('fiber', input_size)
 
@@ -174,7 +173,7 @@ upward_params = {
     'bilinear': True,
 }
 output_params = {
-    'in_channels': 64,
+    'in_channels': 2,
     'n_classes': n_classes,
 }
 
@@ -183,7 +182,7 @@ downward_params['out_channels'] = [downward_params['out_channels'][i]*arc_width 
 upward_params['in_channels'] = [upward_params['in_channels'][i]*arc_width for i in range(min(len(upward_params['in_channels']), arc_depth))]
 upward_params['emb_sizes'] = [upward_params['emb_sizes'][i]*arc_width for i in range(min(len(upward_params['emb_sizes']), arc_depth))]
 upward_params['out_channels'] = [upward_params['out_channels'][i]*arc_width for i in range(min(len(upward_params['out_channels']), arc_depth))]
-output_params['in_channels'] = [output_params['in_channels'][i]*arc_width for i in range(min(len(output_params['in_channels']), arc_depth))]
+output_params['in_channels'] = output_params['in_channels']*arc_width
 
 x = torch.rand(batch_size, 3, input_height, input_width)
 
@@ -256,7 +255,7 @@ def save_checkpoint(checkpoint):
         'epoch': checkpoint,
         }, model_path)
 
-save_checkpoint(0)
+save_checkpoint('init')
 
 print('Starting training loop; initial compile can take a while...')
 since = time.time()
@@ -271,20 +270,19 @@ for epoch in pbar:
         cl_wise_iou, test_stats = test(model, test_loader, n_classes, device)
 
     if writer:
-        writer.add_scalars('train_stats', train_stats, epoch)
+        for stat in train_stats:
+            writer.add_scalar(stat, train_stats[stat], epoch)
         if test_while_train:
-            writer.add_scalars('test_stats', test_stats, epoch)
+            for stat in test_stats:
+                writer.add_scalar(stat, test_stats[stat], epoch)
             for cl_i in range(len(cl_wise_iou)):
-                writer.add_scalar(f'class {classes[cl_i]} iou', cl_wise_iou[cl_i])
+                writer.add_scalar(f'class_{classes[cl_i]}_iou', cl_wise_iou[cl_i], epoch)
 
     pbar.set_postfix(loss = epoch_loss, acc = epoch_acc)
         
-    if epoch+1 in checkpoints:
+    if epoch+1==num_epochs or (frequency>0 and epoch%frequency==0):
         save_checkpoint(epoch)
 
-    pbar.set_postfix(loss = epoch_loss, acc=100. * epoch_acc)
-
-save_checkpoint(num_epochs)
 time_elapsed = time.time() - since
 print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, last epoch loss: {epoch_loss}, acc: {100. * epoch_acc}')
 

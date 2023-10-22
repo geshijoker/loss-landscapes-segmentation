@@ -5,6 +5,7 @@ import os
 
 import numpy as np
 import torch
+from torch import nn
 import torch.nn.functional as F
 from tqdm import tqdm, trange
 
@@ -58,22 +59,23 @@ def train_epoch(model, dataloader, num_classes, criterion, optimizer, scheduler,
         optimizer.step()
 
         # statistics
-        epoch_loss += loss.item() * batch_size/nxt_count + epoch_loss * count/nxt_count
-        epoch_acc += ((preds == targets).sum()/np.prod(preds.size())).item() * batch_size/nxt_count + epoch_acc * count/nxt_count
-        epoch_ce += nn.CrossEntropyLoss(outputs, seg_masks).item() * batch_size/nxt_count + epoch_ce * count/nxt_count
-        epoch_iou += metrics.iou_coef(targets.flatten(), preds.flatten(), num_classes).item() * batch_size/nxt_count + epoch_iou * count/nxt_count
-        epoch_dice += metrics.dice_coef(targets.flatten(), preds.flatten(), num_classes).item() * batch_size/nxt_count + epoch_dice * count/nxt_count
+        epoch_loss = loss.item() * batch_size/nxt_count + epoch_loss * count/nxt_count
+        epoch_acc = ((preds == targets).sum()/np.prod(preds.size())).item() * batch_size/nxt_count + epoch_acc * count/nxt_count
+        epoch_ce = nn.CrossEntropyLoss()(outputs, seg_masks).item() * batch_size/nxt_count + epoch_ce * count/nxt_count
+        epoch_iou = metrics.iou_coef(targets.flatten(), preds.flatten(), num_classes).item() * batch_size/nxt_count + epoch_iou * count/nxt_count
+        epoch_dice = metrics.dice_coef(targets.flatten(), preds.flatten(), num_classes).item() * batch_size/nxt_count + epoch_dice * count/nxt_count
         
         count = nxt_count
+        piter.set_postfix(accuracy=100. * epoch_acc)
 
     epoch_acc *= 100.
     scheduler.step()
     train_stats = {
-        'epoch_loss': epoch_loss,
-        'epoch_acc': epoch_acc,
-        'epoch_ce': epoch_ce,
-        'epoch_iou': epoch_iou,
-        'epoch_dice': epoch_dice,
+        'train_loss': epoch_loss,
+        'train_acc': epoch_acc,
+        'train_ce': epoch_ce,
+        'train_iou': epoch_iou,
+        'train_dice': epoch_dice,
     }
     
     return model, epoch_loss, epoch_acc, train_stats
@@ -93,7 +95,7 @@ def test(model, dataloader, num_classes, device):
     # Iterate over data.
     with torch.no_grad():
         piter = tqdm(dataloader, unit='batch')
-        for inputs, seg_masks in pbar:
+        for inputs, seg_masks in piter:
             piter.set_description(f"Test ")
 
             inputs = inputs.to(device)
@@ -133,9 +135,9 @@ def test(model, dataloader, num_classes, device):
     print(f'Testing complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, Test Acc: {100. * acc}, Test Iou: {mean_IOU}')
     
     test_stats = {
-        "class_wise_IOU": cl_wise_iou,
-        "frequency_weighted_IOU": frequency_weighted_IOU,
-        "mean_IOU": mean_IOU,
+        "test_acc": 100. * acc,
+        "test_frequency_weighted_IOU": frequency_weighted_IOU,
+        "test_mean_IOU": mean_IOU,
     }
 
     return cl_wise_iou, test_stats

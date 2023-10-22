@@ -131,12 +131,12 @@ def get_datset(dataset_name, dataset_parameters):
 def get_default_transforms(dataset_name, size):
     if dataset_name=='fiber':
         data_transform = transforms.Compose([
-            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.ToTensor(),
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             ])
         target_transform = transforms.Compose([
-            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.ToTensor(),
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             ])
     elif dataset_name=='oxford':
         data_mean = np.array((0.485, 0.456, 0.406))
@@ -145,16 +145,16 @@ def get_default_transforms(dataset_name, size):
         data_transform = transforms.Compose([
             transforms.Resize(256, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.CenterCrop(224),
-            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.ToTensor(),
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.Normalize(data_mean, data_std)
         ])
 
         target_transform = transforms.Compose([
             transforms.Resize(256, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.CenterCrop(224),
-            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.ToTensor(),
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
             OneHotTransform(3),
         ])
     else:

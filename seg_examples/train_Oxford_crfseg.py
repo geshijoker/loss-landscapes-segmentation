@@ -32,18 +32,17 @@ from segmentationCRF import metrics
 from segmentationCRF.models import UNet
 from segmentationCRF.data_utils import get_datset, get_default_transforms
 from segmentationCRF.utils import check_make_dir
+from segmentationCRF import train_epoch, test
 from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -c seg_examples/checkpoints.npy -e /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy -n 2 -a unet -l ce -s 234 -p 0.1 -g 1 --benchmark --verbose
+python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy -n 0 -a unet-crf -l ce -s 9999 -p 0.1 -g 4 -f 1 -ne 2 -lr 0.001 -bs 128 -ad 5 -aw 32 -ip 224 -t -dp --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
 parser.add_argument('--data', '-d', type=str, required=True,
                     help='data folder to load data')
-parser.add_argument('--checkpoints', '-c', type=str, required=True,
-                    help='npy file that save the list of iterations to make checkpoints')
 parser.add_argument('--experiment', '-e', type=str, required=True,
                     help='name of the experiment')
 parser.add_argument('--name', '-n', type=str, required=True, 
@@ -60,6 +59,22 @@ parser.add_argument('--percentage', '-p', type=float, default=1.0,
                     help='the percentage of data used for training')
 parser.add_argument('--gpu', '-g', type=int, default=0,
                     help='which GPU to use, only when disable-cuda not specified')
+parser.add_argument('--frequency', '-f', type=int, default=0,
+                    help='for every # epochs to save checkpoints')
+parser.add_argument('--num_epochs', '-ne', type=int, default=15,
+                    help='the number of epochs for training')
+parser.add_argument('--learning_rate', '-lr', type=float, default=0.001,
+                    help='the learning rate of training')
+parser.add_argument('--batch_size', '-bs', type=int, default=32,
+                    help='the batch size of the data')
+parser.add_argument('--arc_depth', '-ad', type=int, default=5,
+                    help='the depth of the model')
+parser.add_argument('--arc_width', '-aw', type=int, default=32,
+                    help='the width of the model')
+parser.add_argument('--input_size', '-ip', type=int, default=224,
+                    help='the size of input')
+parser.add_argument('--test_while_train', '-t', action='store_true',
+                    help='using test while train')
 parser.add_argument('--data_parallel', '-dp', action='store_true',
                     help='using data parallel')
 parser.add_argument('--benchmark', action='store_true',
@@ -71,10 +86,6 @@ parser.add_argument('--verbose', action='store_true',
 
 # load and parse argument
 args = parser.parse_args()
-
-checkpoints = np.load(args.checkpoints)
-assert checkpoints.ndim==1, 'The loaded checkpoints is not a 1D array'
-print(checkpoints)
 
 if args.gpu<0 or not torch.cuda.is_available():
     device = torch.device('cpu')
@@ -114,42 +125,56 @@ if args.debug:
     torch.autograd.set_detect_anomaly(True)
 else:
     torch.autograd.set_detect_anomaly(False)
-
-writer = SummaryWriter(log_path)
-
+    
 data_path = args.data
-input_size = 224
-batch_size=32
-n_workers = 0
-classes = ('foreground', 'background', 'border')
-n_classes = len(classes)
-num_epochs = 15
+lr = args.learning_rate
+input_size = args.input_size
+batch_size=args.batch_size
+arc_width = args.arc_width
+arc_depth = args.arc_depth
+lr = args.learning_rate
+test_while_train = args.test_while_train
+frequency = args.frequency
+num_epochs = args.num_epochs
 percentage = args.percentage
 assert percentage>0 and percentage<=1, "The percentage is out of range of (0, 1)"
 
-data_transform, target_transform = get_default_transforms('oxford')
+writer = SummaryWriter(log_path)
+
+n_workers = 0
+classes = ('foreground', 'background', 'border')
+n_classes = len(classes)
+
+data_transform, target_transform = get_default_transforms('oxford', input_size)
 
 downward_params = {
     'in_channels': 3, 
-    'emb_sizes': [32, 64, 128, 256, 512], 
-    'out_channels': [32, 64, 128, 256, 512],
+    'emb_sizes': [1, 2, 4, 8, 16], 
+    'out_channels': [1, 2, 4, 8, 16],
     'kernel_sizes': [3, 3, 3 ,3 ,3], 
     'paddings': [1, 1, 1, 1, 1], 
     'batch_norm_first': False,
 }
 upward_params = {
-    'in_channels': [512, 1024, 512, 256, 128],
-    'emb_sizes': [1024, 512, 256, 128, 64], 
-    'out_channels': [512, 256, 128, 64, 32],
+    'in_channels': [16, 32, 16, 8, 4],
+    'emb_sizes': [32, 16, 8, 4, 2], 
+    'out_channels': [16, 8, 4, 2, 1],
     'kernel_sizes': [3, 3, 3, 3, 3], 
     'paddings': [1, 1, 1, 1, 1], 
     'batch_norm_first': False, 
     'bilinear': True,
 }
 output_params = {
-    'in_channels': 64,
+    'in_channels': 2,
     'n_classes': n_classes,
 }
+
+downward_params['emb_sizes'] = [downward_params['emb_sizes'][i]*arc_width for i in range(min(len(downward_params['emb_sizes']), arc_depth))]
+downward_params['out_channels'] = [downward_params['out_channels'][i]*arc_width for i in range(min(len(downward_params['out_channels']), arc_depth))]
+upward_params['in_channels'] = [upward_params['in_channels'][i]*arc_width for i in range(min(len(upward_params['in_channels']), arc_depth))]
+upward_params['emb_sizes'] = [upward_params['emb_sizes'][i]*arc_width for i in range(min(len(upward_params['emb_sizes']), arc_depth))]
+upward_params['out_channels'] = [upward_params['out_channels'][i]*arc_width for i in range(min(len(upward_params['out_channels']), arc_depth))]
+output_params['in_channels'] = output_params['in_channels']*arc_width
 
 x = torch.rand(batch_size, 3, input_size, input_size)
 
@@ -174,11 +199,16 @@ dataset_parameters = {
     'download': True,
 }
 
-dataset = get_datset('oxford', dataset_parameters)
-num = int(round(len(dataset)*percentage))
+train_set = get_datset('oxford', dataset_parameters)
+num = int(round(len(train_set)*percentage))
 selected = list(range(num))
-dataset = Subset(dataset, selected)
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
+trainset = Subset(train_set, selected)
+train_loader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
+
+if test_while_train:
+    dataset_parameters['split'] = 'test'
+    test_set = get_datset('oxford', dataset_parameters)
+    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=n_workers)
 
 if args.data_parallel:
     model= nn.DataParallel(model)
@@ -197,7 +227,7 @@ else:
     print(f'{args.loss} not supported, use default CrossEntropyLoss')
     criterion = nn.CrossEntropyLoss() 
 
-optimizer = optim.AdamW(model.parameters(), lr=1e-3)
+optimizer = optim.AdamW(model.parameters(), lr=lr)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=20)
 
 since = time.time()
@@ -215,63 +245,37 @@ def save_checkpoint(checkpoint):
         'iteration': checkpoint,
         }, model_path)
 
-save_checkpoint(0)
+save_checkpoint('init')
 
 print('Starting training loop; initial compile can take a while...')
+since = time.time()
+model.train()   # Set model to evaluate mode
+start_epoch = 0
+
 pbar = trange(num_epochs, desc='Epoch', unit='epoch', initial=start_epoch, position=0)
 # Iterate over data.
 for epoch in pbar:
-    running_loss = 0.0
-    running_iou = 0.0
-    running_dice = 0.0
-    running_corrects = 0
-    count = 0
+    model, epoch_loss, epoch_acc, train_stats = train_epoch(model, train_loader, n_classes, criterion, optimizer, scheduler, device)
+    if test_while_train:
+        cl_wise_iou, test_stats = test(model, test_loader, n_classes, device)
 
-    piter = tqdm(dataloader, desc='Batch', unit='batch', position=1, leave=False)
-    for i, (inputs, seg_masks) in enumerate(piter):
+    if writer:
+        for stat in train_stats:
+            writer.add_scalar(stat, train_stats[stat], epoch)
+        if test_while_train:
+            for stat in test_stats:
+                writer.add_scalar(stat, test_stats[stat], epoch)
+            for cl_i in range(len(cl_wise_iou)):
+                writer.add_scalar(f'class_{classes[cl_i]}_iou', cl_wise_iou[cl_i], epoch)
 
-        inputs = inputs.to(device)
-        seg_masks = seg_masks.to(device)
-        _, targets = torch.max(seg_masks, 1)
-        batch_size = inputs.size(0)
+    pbar.set_postfix(loss = epoch_loss, acc = epoch_acc)
         
-        count += batch_size
-        cur_iter = epoch * len(piter) + i
-        # zero the parameter gradients
-        optimizer.zero_grad()
-
-        outputs = model(inputs)
-        _, preds = torch.max(outputs, 1)
-        loss = criterion(outputs, seg_masks)
-
-        loss.backward()
-        optimizer.step()
-
-        # statistics
-        running_loss += loss.item() * batch_size
-        running_iou += metrics.iou_coef(targets.flatten(), preds.flatten(), n_classes).item() * batch_size
-        running_dice += metrics.dice_coef(targets.flatten(), preds.flatten(), n_classes).item() * batch_size
-        running_corrects += ((preds == targets).sum()/np.prod(preds.size())).item() * batch_size
-        
-        if cur_iter in checkpoints:
-            save_checkpoint(cur_iter)
-
-    scheduler.step()
-    epoch_loss = running_loss / count
-    epoch_iou = running_iou / count
-    epoch_dice = running_dice / count
-    epoch_acc = running_corrects / count
-
-    if writer is not None:
-        writer.add_scalar('train loss', epoch_loss, epoch)
-        writer.add_scalar('train iou', epoch_iou, epoch)
-        writer.add_scalar('train dice', epoch_dice, epoch)
-        writer.add_scalar('train acc', 100. * epoch_acc, epoch)
-
-    pbar.set_postfix(loss = epoch_loss, acc=100. * epoch_acc, iou = epoch_iou, dice = epoch_dice)
+    if epoch+1==num_epochs or (frequency>0 and epoch%frequency==0):
+        save_checkpoint(epoch)
 
 time_elapsed = time.time() - since
-print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, last epoch loss: {epoch_loss}, acc: {100. * epoch_acc}, Iou: {epoch_iou}, Dice: {epoch_dice}')
+print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, last epoch loss: {epoch_loss}, acc: {100. * epoch_acc}')
 
 writer.flush()
 writer.close()
+
