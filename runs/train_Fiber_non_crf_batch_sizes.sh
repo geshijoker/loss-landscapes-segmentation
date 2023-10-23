@@ -7,8 +7,8 @@
 #SBATCH --ntasks-per-node=4
 #SBATCH -c 32
 #SBATCH --gpus-per-task=1
-#SBATCH -o logs/percentages.%N.%j..out # STDOUT
-#SBATCH -e logs/percentages.%N.%j..err # STDERR
+#SBATCH -o logs/non_crf_batch_sizes.%N.%j.out # STDOUT
+#SBATCH -e logs/non_crf_batch_sizes.%N.%j.err # STDERR
 
 ###############################################################################
 ### setup here
@@ -37,26 +37,26 @@ export PYTHONUNBUFFERED=1
 ###############################################################################
 
 # define the portion of training data to use for training
-percentages=(0.1 0.05 0.02 0.01 0.005 0.002 0.001)
+batchsizes=(32 16 8 4 1)
 seed=234
 
 # Iterate over the array using a for loop
-for percentage in "${percentages[@]} "; do
-    echo "Processing percentage: $percentage, seed: $seed"
+for batchsize in "${batchsizes[@]} "; do
+    echo "Processing batchsize: $batchsize, seed: $seed"
     
-    _train_cmd="python /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Fiber_crfseg.py \
+    _train_cmd="python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Fiber_crfseg.py \
         -d /global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter \
-        -e /global/cfs/cdirs/m636/geshi/exp/Fiber/percentage/CrossEntropy/crf/seed_$seed \
-        -n 0_p_${percentage/"."/""}\
-        -a unet-crf \
+        -e /global/cfs/cdirs/m636/geshi/exp/Fiber/batch_size/CrossEntropy/non-crf/seed_$seed \
+        -n 0_bs_$batchsize\
+        -a unet \
         -l ce \
         -s $seed \
-        -p $percentage \
+        -p 0.1 \
         -g 4 \
         -f 20 \
         -ne 20 \
         -lr 0.001 \
-        -bs 32 \
+        -bs $batchsize \
         -ad 5 \
         -aw 32 \
         -ip 288 \
@@ -64,7 +64,7 @@ for percentage in "${percentages[@]} "; do
 
     echo $_train_cmd
     echo ""
-    srun -n 1 $_train_cmd
+    srun -n 1 $_train_cmd &
     echo ""
     
 done

@@ -284,7 +284,7 @@ for epoch in pbar:
         save_checkpoint(epoch)
 
 time_elapsed = time.time() - since
-print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, last epoch loss: {epoch_loss}, acc: {100. * epoch_acc}')
+print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, last epoch loss: {epoch_loss}, acc: {epoch_acc}')
 
 writer.flush()
 writer.close()

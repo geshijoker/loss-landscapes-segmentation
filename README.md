@@ -1,3 +1,10 @@
+# installing conda environment
+
+```console
+foo@bar:~$ cd loss-landscapes-segmentation
+foo@bar:~$ conda env create --file CRF_GPU_Env.yaml
+```
+
 # loss-landscapes
 
 `loss-landscapes` is a PyTorch library for approximating neural network loss functions, and other related metrics, 

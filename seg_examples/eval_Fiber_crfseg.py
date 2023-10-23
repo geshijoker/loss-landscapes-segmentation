@@ -192,6 +192,6 @@ model.load_state_dict(checkpoint['model_state_dict'])
 
 cl_wise_iou, test_stats = test(model, dataloader, n_classes, device)
 with SummaryWriter(log_path) as w:
-    w.add_hparams({'name':model_name, 'lr': 0.0001, 'bs': batch_size}, test_stats)
+    w.add_hparams({'name':model_name, 'bs': batch_size}, test_stats)
 
 print(test_stats)

@@ -34,7 +34,7 @@ seed=234
 for percentage in "${percentages[@]} "; do
     echo "Processing percentage: $percentage, seed: $seed"
     
-    _train_cmd="python /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Fiber_crfseg.py \
+    _train_cmd="python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Fiber_crfseg.py \
         -d /global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter \
         -e /global/cfs/cdirs/m636/geshi/exp/Fiber/percentage/CrossEntropy/non-crf/seed_$seed \
         -n 0_p_${percentage/"."/""}\

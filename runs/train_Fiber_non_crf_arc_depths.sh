@@ -7,8 +7,8 @@
 #SBATCH --ntasks-per-node=4
 #SBATCH -c 32
 #SBATCH --gpus-per-task=1
-#SBATCH -o logs/percentages.%N.%j..out # STDOUT
-#SBATCH -e logs/percentages.%N.%j..err # STDERR
+#SBATCH -o logs/non_crf_arc_depths.%N.%j..out # STDOUT
+#SBATCH -e logs/non_crf_arc_depths.%N.%j..err # STDERR
 
 ###############################################################################
 ### setup here
@@ -44,7 +44,7 @@ seed=234
 for arcdepth in "${arcdepths[@]} "; do
     echo "Processing arcdepth: $arcdepth, seed: $seed"
     
-    _train_cmd="python /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Fiber_crfseg.py \
+    _train_cmd="python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Fiber_crfseg.py \
         -d /global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter \
         -e /global/cfs/cdirs/m636/geshi/exp/Fiber/arc_depths/CrossEntropy/non-crf/seed_$seed \
         -n 0_ad_${arcdepth}\
@@ -64,7 +64,7 @@ for arcdepth in "${arcdepths[@]} "; do
 
     echo $_train_cmd
     echo ""
-    srun -n 1 $_train_cmd
+    srun -n 1 $_train_cmd &
     echo ""
     
 done
