@@ -61,7 +61,7 @@ parser.add_argument('--gpu', '-g', type=int, default=0,
                     help='which GPU to use, only when disable-cuda not specified')
 parser.add_argument('--frequency', '-f', type=int, default=0,
                     help='for every # epochs to save checkpoints')
-parser.add_argument('--num_epochs', '-ne', type=int, default=15,
+parser.add_argument('--num_epochs', '-ne', type=int, default=20,
                     help='the number of epochs for training')
 parser.add_argument('--learning_rate', '-lr', type=float, default=0.001,
                     help='the learning rate of training')
