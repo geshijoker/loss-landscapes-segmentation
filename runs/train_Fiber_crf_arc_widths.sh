@@ -53,7 +53,7 @@ for arcwidth in "${arcwidths[@]} "; do
         -s $seed \
         -p 0.001 \
         -g 4 \
-        -f 1 \
+        -f 20 \
         -ne 20 \
         -lr 0.001 \
         -bs 32 \

@@ -53,7 +53,7 @@ for batchsize in "${batchsizes[@]} "; do
         -s $seed \
         -p 0.1 \
         -g 4 \
-        -f 1 \
+        -f 20 \
         -ne 20 \
         -lr 0.001 \
         -bs $batchsize \

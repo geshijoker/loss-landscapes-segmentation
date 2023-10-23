@@ -6,6 +6,10 @@ Env/
 # data
 data/
 
+# logs
+examples/
+runs/logs/
+
 # debugging files
 tests/paste.txt
 
