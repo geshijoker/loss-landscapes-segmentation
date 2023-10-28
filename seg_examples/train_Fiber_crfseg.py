@@ -35,7 +35,7 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Fiber_crfseg.py -d /global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter -e /global/cfs/cdirs/m636/geshi/exp/Fiber/crf/CrossEntropy -n 0 -a unet-crf -l ce -s 9999 -p 0.1 -g 0 -f 1 -ne 2 -lr 0.0001 -bs 128 -ad 5 -aw 32 -ip 288 -t -dp --benchmark --verbose
+python seg_examples/train_Fiber_crfseg.py -d /global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter -e /global/cfs/cdirs/m636/geshi/exp/Fiber/crf/CrossEntropy -n 2 -a unet -l ce -s 9999 -p 0.1 -g 0 -f 5 -ne 20 -lr 0.0001 -bs 128 -ad 5 -aw 32 -ip 288 --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
@@ -270,6 +270,7 @@ for epoch in pbar:
         cl_wise_iou, test_stats = test(model, test_loader, n_classes, device)
 
     if writer:
+        writer.add_scalar('time eplased', time.time() - since, epoch)
         for stat in train_stats:
             writer.add_scalar(stat, train_stats[stat], epoch)
         if test_while_train:

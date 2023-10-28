@@ -2,7 +2,7 @@
 #SBATCH -A m636
 #SBATCH -C gpu
 #SBATCH -q regular
-#SBATCH -t 3:00:00
+#SBATCH -t 6:00:00
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=4
 #SBATCH -c 32
@@ -37,7 +37,7 @@ export PYTHONUNBUFFERED=1
 ###############################################################################
 
 # define the portion of training data to use for training
-arcwidths=(5 4 3 2 1)
+arcwidths=(32 16 8 4)
 seed=234
 
 # Iterate over the array using a for loop
@@ -51,8 +51,8 @@ for arcwidth in "${arcwidths[@]} "; do
         -a unet \
         -l ce \
         -s $seed \
-        -p 0.001 \
-        -g 4 \
+        -p 0.1 \
+        -g 0 \
         -f 20 \
         -ne 20 \
         -lr 0.001 \

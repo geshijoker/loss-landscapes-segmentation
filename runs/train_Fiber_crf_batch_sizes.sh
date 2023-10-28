@@ -52,7 +52,7 @@ for batchsize in "${batchsizes[@]} "; do
         -l ce \
         -s $seed \
         -p 0.1 \
-        -g 4 \
+        -g 0 \
         -f 20 \
         -ne 20 \
         -lr 0.001 \

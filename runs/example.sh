@@ -28,7 +28,7 @@ conda activate CRF_GPU_Env
 
 # define the portion of training data to use for training
 percentages=(0.1 0.05 0.02 0.01 0.005 0.002 0.001)
-seed=234
+seed=9999
 
 # Iterate over the array using a for loop
 for percentage in "${percentages[@]} "; do
@@ -45,7 +45,7 @@ for percentage in "${percentages[@]} "; do
         -g 4 \
         -f 20 \
         -ne 20 \
-        -lr 0.001 \
+        -lr 0.0001 \
         -bs 32 \
         -ad 5 \
         -aw 32 \

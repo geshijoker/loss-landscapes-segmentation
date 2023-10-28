@@ -1,0 +1,40 @@
+/global/u2/g/geshi/loss-landscapes-segmentation
+nid008204
+Fri 27 Oct 2023 01:37:31 AM PDT
+starting job...
+Processing percentage: 0.002, seed: 234
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234 -n 0_lr_0002 -a unet -l ce -s 234 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.002 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+
+
+Processing percentage: 0.001, seed: 234
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234 -n 0_lr_0001 -a unet -l ce -s 234 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+
+
+Processing percentage: 0.0005, seed: 234
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234 -n 0_lr_00005 -a unet -l ce -s 234 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.0005 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+
+
+Processing percentage: 0.0002, seed: 234
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234 -n 0_lr_00002 -a unet -l ce -s 234 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.0002 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+
+
+Processing percentage: 0.0001, seed: 234
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234 -n 0_lr_00001 -a unet -l ce -s 234 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.0001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+
+
+Processing percentage: 0.00005 , seed: 234
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234 -n 0_lr_000005 -a unet -l ce -s 234 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.00005 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+
+
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234/0_lr_00005_seed_234
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234/0_lr_00001_seed_234
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234/0_lr_0002_seed_234
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234/0_lr_00002_seed_234
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234/0_lr_000005_seed_234
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_234/0_lr_0001_seed_234

@@ -1,0 +1,34 @@
+/global/u2/g/geshi/loss-landscapes-segmentation
+nid001333
+Thu 26 Oct 2023 11:10:00 PM PDT
+starting job...
+Processing arcwidth: 5, seed: 5370
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370 -n 0_aw_5 -a unet -l ce -s 5370 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.001 -bs 32 -ad 5 -aw 5 -ip 224 -t --benchmark --verbose
+
+
+Processing arcwidth: 4, seed: 5370
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370 -n 0_aw_4 -a unet -l ce -s 5370 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.001 -bs 32 -ad 5 -aw 4 -ip 224 -t --benchmark --verbose
+
+
+Processing arcwidth: 3, seed: 5370
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370 -n 0_aw_3 -a unet -l ce -s 5370 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.001 -bs 32 -ad 5 -aw 3 -ip 224 -t --benchmark --verbose
+
+
+Processing arcwidth: 2, seed: 5370
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370 -n 0_aw_2 -a unet -l ce -s 5370 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.001 -bs 32 -ad 5 -aw 2 -ip 224 -t --benchmark --verbose
+
+
+Processing arcwidth: 1 , seed: 5370
+python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370 -n 0_aw_1 -a unet -l ce -s 5370 -p 0.1 -g 0 -f 20 -ne 20 -lr 0.001 -bs 32 -ad 5 -aw 1 -ip 224 -t --benchmark --verbose
+
+
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370/0_aw_5_seed_5370
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370/0_aw_1_seed_5370
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370/0_aw_2_seed_5370
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370/0_aw_3_seed_5370
+Using device: cuda:0
+created folder :  /global/cfs/cdirs/m636/geshi/exp/Oxford/arc_widths/CrossEntropy/non-crf/seed_5370/0_aw_4_seed_5370

@@ -2,7 +2,7 @@
 #SBATCH -A m636
 #SBATCH -C gpu
 #SBATCH -q regular
-#SBATCH -t 3:00:00
+#SBATCH -t 6:00:00
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=4
 #SBATCH -c 32
@@ -52,7 +52,7 @@ for batchsize in "${batchsizes[@]} "; do
         -l ce \
         -s $seed \
         -p 0.1 \
-        -g 4 \
+        -g 0 \
         -f 20 \
         -ne 20 \
         -lr 0.001 \

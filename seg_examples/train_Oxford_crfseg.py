@@ -37,7 +37,7 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy -n 0 -a unet-crf -l ce -s 9999 -p 0.1 -g 4 -f 1 -ne 2 -lr 0.001 -bs 128 -ad 5 -aw 32 -ip 224 -t -dp --benchmark --verbose
+python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy -n 1 -a unet -l ce -s 9999 -p 0.1 -g -1 -f 5 -ne 2 -lr 0.001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
@@ -201,7 +201,8 @@ dataset_parameters = {
 
 train_set = get_datset('oxford', dataset_parameters)
 num = int(round(len(train_set)*percentage))
-selected = list(range(num))
+# selected = list(range(num))
+selected = random.sample(list(range(len(train_set))), num)
 trainset = Subset(train_set, selected)
 train_loader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
 
@@ -260,6 +261,7 @@ for epoch in pbar:
         cl_wise_iou, test_stats = test(model, test_loader, n_classes, device)
 
     if writer:
+        writer.add_scalar('time eplased', time.time() - since, epoch)
         for stat in train_stats:
             writer.add_scalar(stat, train_stats[stat], epoch)
         if test_while_train:
@@ -270,8 +272,8 @@ for epoch in pbar:
 
     pbar.set_postfix(loss = epoch_loss, acc = epoch_acc)
         
-    if epoch+1==num_epochs or (frequency>0 and epoch%frequency==0):
-        save_checkpoint(epoch)
+    if epoch+1==num_epochs or (frequency>0 and (epoch+1)%frequency==0):
+        save_checkpoint(epoch+1)
 
 time_elapsed = time.time() - since
 print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, last epoch loss: {epoch_loss}, acc: {epoch_acc}')

@@ -52,7 +52,7 @@ for percentage in "${percentages[@]} "; do
         -l ce \
         -s $seed \
         -p $percentage \
-        -g 4 \
+        -g 0 \
         -f 20 \
         -ne 20 \
         -lr 0.001 \
