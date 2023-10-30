@@ -37,7 +37,7 @@ export PYTHONUNBUFFERED=1
 ###############################################################################
 
 # define the portion of training data to use for training
-percentages=(1.0 0.5 0.2 0.1, 0.05)
+percentages=(1.0 0.5 0.2 0.1 0.05)
 seed=234
 
 # Iterate over the array using a for loop
