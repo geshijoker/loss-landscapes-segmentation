@@ -15,6 +15,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
+import torchvision
 from torchvision import transforms, utils
 from torchinfo import summary
 from torch.utils.tensorboard import SummaryWriter
@@ -24,13 +25,15 @@ from torch.utils.data import Subset
 from segmentationCRF import metrics
 from segmentationCRF.models import UNet
 from segmentationCRF.data_utils import get_datset, get_default_transforms
-from segmentationCRF.utils import check_make_dir
+from segmentationCRF.utils import check_make_dir, get_label_image, get_label_images_from_tensor
 from segmentationCRF import test
 from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/eval_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy/0_seed_9999/iter512-10-16-2023-17:13:04.pt -a unet-crf -s 9999 -g 5 -p 1 -ad 5 -aw 32 -ip 224 -bs 128 -dp --benchmark --verbose
+python seg_examples/eval_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy/0_seed_9999/iter512-10-16-2023-17:13:04.pt -a unet-crf -s 9999 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
+
+python seg_examples/eval_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy/0_seed_9999/iter512-10-16-2023-16:58:19.pt -a unet -s 9999 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model testing')
@@ -167,7 +170,7 @@ dataset = get_datset('oxford', dataset_parameters)
 num = int(round(len(dataset)*percentage))
 selected = list(range(num))
 dataset = Subset(dataset, selected)
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=n_workers)
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
 
 if args.data_parallel:
     model= nn.DataParallel(model)
@@ -177,7 +180,22 @@ checkpoint = torch.load(model_path, map_location=device)
 model.load_state_dict(checkpoint['model_state_dict'])
 
 cl_wise_iou, test_stats = test(model, dataloader, n_classes, device)
+
+dataiter = iter(dataloader)
+images, labels = next(dataiter)
+# create grid of images
+img_labels = get_label_images_from_tensor(labels, n_classes, is_one_hot=True)
+label_grid = torchvision.utils.make_grid(img_labels)
+
+with torch.no_grad():
+    preds = model(images.to(device)).detach().cpu()
+    img_preds = get_label_images_from_tensor(preds, n_classes, is_one_hot=True)
+    preds_grid = torchvision.utils.make_grid(img_preds)
+
+# write to tensorboard
 with SummaryWriter(log_path) as w:
     w.add_hparams({'name':model_name, 'bs': batch_size}, test_stats)
+    # w.add_image('gtrue labels', label_grid)
+    # w.add_image('preds labels', preds_grid)
 
 print(test_stats)

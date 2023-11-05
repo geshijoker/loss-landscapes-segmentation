@@ -70,3 +70,35 @@ class IOULoss(nn.Module):
         union = torch.sum(pred_flat) + torch.sum(true_flat)
         
         return 1 - ((intersection + self.smooth) / (union - intersection + self.smooth) )
+    
+def miss_homo(y_true, y_pred):
+    mask = (y_true!=y_pred)
+    homo = ((y_pred[:,:-1,:]!=y_pred[:,1:,:])*mask[:,:-1,:]).sum() + \
+           ((y_pred[:,1:,:]!=y_pred[:,:-1,:])*mask[:,1:,:]).sum() + \
+           ((y_pred[:,:,:-1]!=y_pred[:,:,1:])*mask[:,:,:-1]).sum() + \
+           ((y_pred[:,:,1:]!=y_pred[:,:,:-1])*mask[:,:,1:]).sum()
+    return homo
+
+def homo(y_true, y_pred):
+    homo = (y_pred[:,:-1,:]!=y_pred[:,1:,:]).sum() + \
+           (y_pred[:,1:,:]!=y_pred[:,:-1,:]).sum() + \
+           (y_pred[:,:,:-1]!=y_pred[:,:,1:]).sum() + \
+           (y_pred[:,:,1:]!=y_pred[:,:,:-1]).sum()
+    return homo
+
+def true_homo(y_true, y_pred):
+    homo = 0
+    mask = (y_true!=y_pred)
+    for i in range(mask.shape[0]):
+        for j in range(mask.shape[1]):
+            for k in range(mask.shape[2]):
+                if mask[i,j,k]:
+                    if j>=1 and y_pred[i,j,k]!=y_pred[i,j-1,k]:
+                        homo+=1
+                    if j<mask.shape[1]-1 and y_pred[i,j,k]!=y_pred[i,j+1,k]:
+                        homo+=1
+                    if k>=1 and y_pred[i,j,k]!=y_pred[i,j,k-1]:
+                        homo+=1
+                    if k<mask.shape[2]-1 and y_pred[i,j,k]!=y_pred[i,j,k+1]:
+                        homo+=1
+    return homo

@@ -85,6 +85,7 @@ def test(model, dataloader, num_classes, device):
     model.eval()   # Set model to evaluate mode
     
     corrects = 0
+    homogeneity = 0
     count = 0
 
     tp = np.zeros(num_classes)
@@ -110,6 +111,7 @@ def test(model, dataloader, num_classes, device):
 
             # statistics
             corrects += torch.sum(preds == targets.data)/np.prod(preds.size())*batch_size
+            homogeneity += metrics.miss_homo(targets, preds)/np.prod(preds.size())*batch_size
 
             pr = preds.flatten()
             gt = targets.flatten()
@@ -130,12 +132,14 @@ def test(model, dataloader, num_classes, device):
     mean_IOU = np.mean(cl_wise_iou)
 
     acc = corrects.double().item() / count
+    homo = homogeneity.double().item() / count
 
     time_elapsed = time.time() - since
     print(f'Testing complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, Test Acc: {100. * acc}, Test Iou: {mean_IOU}')
     
     test_stats = {
         "test_acc": 100. * acc,
+        "test_homogeneity": homo,
         "test_frequency_weighted_IOU": frequency_weighted_IOU,
         "test_mean_IOU": mean_IOU,
     }
