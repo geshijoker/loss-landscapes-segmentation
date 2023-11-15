@@ -10,6 +10,7 @@ from skimage import io
 from einops import rearrange
 
 import torch
+from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from torchvision.datasets import OxfordIIITPet
@@ -33,11 +34,40 @@ class OneHotTransform(object):
         self.n_classes = n_classes
 
     def __call__(self, seg_mask):
-        types = (seg_mask.squeeze()*255).type(torch.int64)-1
-        out = F.one_hot(types, self.n_classes).float()
+        out = F.one_hot(seg_mask, self.n_classes).float()
         out = rearrange(out, 'h w c -> c h w')
 
         return out
+    
+class Integerfy(nn.Module):
+    def __init__(self):
+        super(Integerfy, self).__init__()
+        
+    def forward(self, seg_mask):
+        seg_mask = (seg_mask.squeeze()*255).type(torch.int64)-1
+        return seg_mask
+
+class LabelNoiseTransform(nn.Module):
+    def __init__(self, num_classes, noise_level=0.0):
+        super(LabelNoiseTransform, self).__init__()
+        self.num_classes = num_classes
+        self.noise_level = noise_level
+
+    def forward(self, seg_mask):
+        # Copy the original mask to avoid modifying it in place
+        noisy_mask = seg_mask.clone()
+
+        # Determine the number of pixels to add noise to
+        num_pixels = int(self.noise_level * noisy_mask.numel())
+
+        # Randomly select pixels to add noise to
+        noisy_indices = torch.randint(0, noisy_mask.numel(), (num_pixels,))
+        noisy_labels = torch.randint(0, self.num_classes, (num_pixels,))
+
+        # Apply label noise
+        noisy_mask.contiguous().view(-1)[noisy_indices] = noisy_labels
+
+        return noisy_mask
 
 class FiberSegDataset(Dataset):
     """Fiber Segmentation dataset."""
@@ -128,7 +158,7 @@ def get_datset(dataset_name, dataset_parameters):
         raise ValueError("Dataset {} is not supported".format(dataset_name))
 
 
-def get_default_transforms(dataset_name, size):
+def get_default_transforms(dataset_name, size, n_classes, noise_level=0.0):
     if dataset_name=='fiber':
         data_transform = transforms.Compose([
             transforms.ToTensor(),
@@ -155,7 +185,9 @@ def get_default_transforms(dataset_name, size):
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Resize(size, interpolation=transforms.InterpolationMode.NEAREST),
-            OneHotTransform(3),
+            Integerfy(),
+            LabelNoiseTransform(n_classes, noise_level),
+            OneHotTransform(n_classes),
         ])
     else:
         raise ValueError("Dataset {} is not supported".format(dataset_name))

@@ -37,7 +37,7 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy -n 1 -a unet -l ce -s 9999 -p 0.1 -g 0 -f 5 -ne 2 -ln 0.01 -lr 0.001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+python seg_examples/train_Oxford_crf_alter.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-alter/CrossEntropy -n 0 -l ce -s 9999 -g 0 -p 1 -f 10 -ne 40 -ln 0.0 -lr 0.001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
@@ -46,9 +46,7 @@ parser.add_argument('--data', '-d', type=str, required=True,
 parser.add_argument('--experiment', '-e', type=str, required=True,
                     help='name of the experiment')
 parser.add_argument('--name', '-n', type=str, required=True, 
-                    help='name of run')
-parser.add_argument('--architecture', '-a', type=str, default='unet',
-                    help='model architecture')
+                    help='name of run', )
 parser.add_argument('--loss', '-l', type=str, default='ce',
                     help='the loss function to use')
 parser.add_argument('--resume', '-r', type=str, default=None, 
@@ -181,16 +179,11 @@ output_params['in_channels'] = output_params['in_channels']*arc_width
 
 x = torch.rand(batch_size, 3, input_size, input_size)
 
-if args.architecture == 'unet':
-    model = UNet(downward_params, upward_params, output_params)
-elif args.architecture == 'unet-crf':
-    unet = UNet(downward_params, upward_params, output_params)
-    model = nn.Sequential(
-        unet,
-        CRF(n_spatial_dims=2)
-    )
-else:
-    raise ValueError("Model architecture {} is not supported".format(args.architecture))
+unet = UNet(downward_params, upward_params, output_params)
+model = nn.Sequential(
+    unet,
+    CRF(n_spatial_dims=2)
+)
 out = model(x)
 print('output shape', out.shape) 
 
@@ -259,6 +252,16 @@ start_epoch = 0
 pbar = trange(num_epochs, desc='Epoch', unit='epoch', initial=start_epoch, position=0)
 # Iterate over data.
 for epoch in pbar:
+    if epoch % 2==0:
+        for param in model[0].parameters():
+            param.requires_grad = False
+        for param in model[1].parameters():
+            param.requires_grad = True
+    else:
+        for param in model[0].parameters():
+            param.requires_grad = True
+        for param in model[1].parameters():
+            param.requires_grad = False
     model, epoch_loss, epoch_acc, train_stats = train_epoch(model, train_loader, n_classes, criterion, optimizer, scheduler, device)
     if test_while_train:
         cl_wise_iou, test_stats = test(model, test_loader, n_classes, device)

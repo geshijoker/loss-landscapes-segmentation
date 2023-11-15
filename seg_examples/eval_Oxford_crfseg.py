@@ -31,9 +31,9 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/eval_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy/0_seed_9999/iter512-10-16-2023-17:13:04.pt -a unet-crf -s 9999 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
+python seg_examples/eval_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/trans-crf/CrossEntropy/2_seed_234/iter10-11-14-2023-17:44:02.pt -a unet-crf -s 234 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
 
-python seg_examples/eval_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy/0_seed_9999/iter512-10-16-2023-16:58:19.pt -a unet -s 9999 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
+python seg_examples/eval_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-resume/CrossEntropy/1_seed_234/iter10-11-14-2023-09:49:29.pt -a unet -s 234 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model testing')
@@ -114,7 +114,7 @@ n_workers = 0
 classes = ('foreground', 'background', 'border')
 n_classes = len(classes)
     
-data_transform, target_transform = get_default_transforms('oxford', input_size)
+data_transform, target_transform = get_default_transforms('oxford', input_size, n_classes, noise_level=0)
 
 downward_params = {
     'in_channels': 3, 
@@ -170,7 +170,7 @@ dataset = get_datset('oxford', dataset_parameters)
 num = int(round(len(dataset)*percentage))
 selected = list(range(num))
 dataset = Subset(dataset, selected)
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=n_workers)
 
 if args.data_parallel:
     model= nn.DataParallel(model)
@@ -194,8 +194,8 @@ with torch.no_grad():
 
 # write to tensorboard
 with SummaryWriter(log_path) as w:
-    w.add_hparams({'name':model_name, 'bs': batch_size}, test_stats)
-    # w.add_image('gtrue labels', label_grid)
-    # w.add_image('preds labels', preds_grid)
+    w.add_hparams({'name':model_name, 'condition': 'normal'}, test_stats)
+    w.add_image('gtrue labels', label_grid)
+    w.add_image('normal preds labels', preds_grid)
 
 print(test_stats)

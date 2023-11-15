@@ -15,6 +15,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
+import torchvision
 from torchvision import transforms, utils
 from torchinfo import summary
 from torch.utils.tensorboard import SummaryWriter
@@ -23,13 +24,13 @@ from torch.utils.data import Subset
 from segmentationCRF import metrics
 from segmentationCRF.models import UNet
 from segmentationCRF.data_utils import get_datset, get_default_transforms
-from segmentationCRF.utils import check_make_dir
+from segmentationCRF.utils import check_make_dir, get_label_image, get_label_images_from_tensor
 from segmentationCRF import test
 from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/eval_Oxford_crf_trans.py -d /global/cfs/cdirs/m636/geshi/data/ -rc /global/cfs/cdirs/m636/geshi/exp/Oxford/percentage/CrossEntropy/crf/seed_234/0_p_03_seed_234/iter19-10-27-2023-04:33:57.pt -rn /global/cfs/cdirs/m636/geshi/exp/Oxford/percentage/CrossEntropy/non-crf/seed_5370/0_p_03_seed_5370/iter19-10-27-2023-09:20:43.pt -s 234 -g 0 -p 1 -ad 5 -aw 32 -ip 288 -bs 32 --benchmark --verbose
+python seg_examples/eval_Oxford_crf_trans.py -d /global/cfs/cdirs/m636/geshi/data/ -rc /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-resume/CrossEntropy/0_seed_234/iter10-11-14-2023-08:39:48.pt -rn /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-resume/CrossEntropy/1_seed_234/iter10-11-14-2023-09:49:29.pt -s 234 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model testing')
@@ -66,6 +67,7 @@ args = parser.parse_args()
 unet_crf_path = args.resume_crf
 unet_path = args.resume_noncrf
 log_path = os.path.dirname(unet_path)
+unet_crf_name = os.path.basename(unet_crf_path)
 unet_name = os.path.basename(unet_path)
 
 if args.gpu<0 or not torch.cuda.is_available():
@@ -109,7 +111,7 @@ n_workers = 0
 classes = ('foreground', 'background', 'border')
 n_classes = len(classes)
     
-data_transform, target_transform = get_default_transforms('oxford', input_size)
+data_transform, target_transform = get_default_transforms('oxford', input_size, n_classes, noise_level=0)
     
 downward_params = {
     'in_channels': 3, 
@@ -180,12 +182,23 @@ trans_crf = nn.Sequential(
     unet_crf[1]
 )
 
-cl_wise_iou, test_stats = test(unet, dataloader, n_classes, device)
-print('unet: ', test_stats)
-cl_wise_iou, test_stats = test(unet_crf, dataloader, n_classes, device)
-print('unet crf: ', test_stats)
-
 cl_wise_iou, test_stats = test(trans_crf, dataloader, n_classes, device)
+
+dataiter = iter(dataloader)
+images, labels = next(dataiter)
+# create grid of images
+img_labels = get_label_images_from_tensor(labels, n_classes, is_one_hot=True)
+label_grid = torchvision.utils.make_grid(img_labels)
+
+with torch.no_grad():
+    preds = trans_crf(images.to(device)).detach().cpu()
+    img_preds = get_label_images_from_tensor(preds, n_classes, is_one_hot=True)
+    preds_grid = torchvision.utils.make_grid(img_preds)
+
+# write to tensorboard
 with SummaryWriter(log_path) as w:
-    w.add_hparams({'model_name': unet_name+'_crf_trans', 'bs': batch_size}, test_stats)
+    w.add_hparams({'name':unet_name, 'condition': 'crf_trans_'+unet_crf_name}, test_stats)
+    w.add_image('gtrue labels', label_grid)
+    w.add_image('crf_trans preds labels', preds_grid)
+
 print('crf trans: ', test_stats)

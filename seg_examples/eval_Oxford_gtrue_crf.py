@@ -9,12 +9,14 @@ import argparse
 import numpy as np
 import h5py
 from torchviz import make_dot
+from tqdm import tqdm, trange
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
+import torchvision
 from torchvision import transforms, utils
 from torchinfo import summary
 from torch.utils.tensorboard import SummaryWriter
@@ -23,22 +25,22 @@ from torch.utils.data import Subset
 from segmentationCRF import metrics
 from segmentationCRF.models import UNet
 from segmentationCRF.data_utils import get_datset, get_default_transforms
-from segmentationCRF.utils import check_make_dir
+from segmentationCRF.utils import check_make_dir, get_label_image, get_label_images_from_tensor
 from segmentationCRF import test
 from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/eval_Fiber_crf_trans.py -d /global/cfs/projectdirs/m636/Vis4ML/Fiber/Quarter -rc /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-resume/CrossEntropy/0_seed_234/iter10-11-14-2023-08:39:48.pt -rn /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-resume/CrossEntropy/1_seed_234/iter10-11-14-2023-09:49:29.pt -s 234 -g 0 -p 1 -ad 5 -aw 32 -ip 288 -bs 128 --benchmark --verbose
+python seg_examples/eval_Oxford_gtrue_crf.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy/0_seed_9999/iter512-10-16-2023-17:13:04.pt -a unet-crf -s 9999 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model testing')
 parser.add_argument('--data', '-d', type=str, required=True,
                     help='data folder to load data')
-parser.add_argument('--resume_crf', '-rc', type=str, required=True, 
-                    help='resume from checkpoint of unet-crf')
-parser.add_argument('--resume_noncrf', '-rn', type=str, required=True, 
-                    help='resume from checkpoint of unet')
+parser.add_argument('--resume', '-r', type=str, required=True, 
+                    help='resume from checkpoint')
+parser.add_argument('--architecture', '-a', type=str, default='unet',
+                    help='model architecture')
 parser.add_argument('--seed', '-s', type=int, default=None, 
                     help='which seed for random number generator to use')
 parser.add_argument('--gpu', '-g', type=int, default=0,
@@ -53,6 +55,8 @@ parser.add_argument('--input_size', '-ip', type=int, default=288,
                     help='the size of input')
 parser.add_argument('--batch_size', '-bs', type=int, default=32,
                     help='the batch size of the data')
+parser.add_argument('--data_parallel', '-dp', action='store_true',
+                    help='using data parallel')
 parser.add_argument('--benchmark', action='store_true',
                     help='using benchmark algorithms')
 parser.add_argument('--debug', action='store_true',
@@ -63,10 +67,9 @@ parser.add_argument('--verbose', action='store_true',
 # load and parse argument
 args = parser.parse_args()
 
-unet_crf_path = args.resume_crf
-unet_path = args.resume_noncrf
-log_path = os.path.dirname(unet_path)
-unet_name = os.path.basename(unet_path)
+model_path = args.resume
+log_path = os.path.dirname(model_path)
+model_name = os.path.basename(model_path)
 
 if args.gpu<0 or not torch.cuda.is_available():
     device = torch.device('cpu')
@@ -97,6 +100,7 @@ if args.debug:
 else:
     torch.autograd.set_detect_anomaly(False)
     
+data_path = args.data
 batch_size=args.batch_size
 arc_width = args.arc_width
 arc_depth = args.arc_depth
@@ -104,20 +108,11 @@ input_size = args.input_size
 percentage = args.percentage
 assert percentage>0 and percentage<=1, "The percentage is out of range of (0, 1)"
 
-val_images = os.path.join(args.data, "val/img/")
-val_annotations = os.path.join(args.data, "val/ann/")
-batch_size=32
-classes = ('background', 'foreground')
-n_classes = len(classes)
 n_workers = 0
-input_height = 288
-input_width = 288
-output_height = 288
-output_width = 288
-read_image_type=1
-ignore_segs = False
+classes = ('foreground', 'background', 'border')
+n_classes = len(classes)
 
-data_transform, target_transform = get_default_transforms('fiber', input_size)
+data_transform, target_transform = get_default_transforms('oxford', input_size)
     
 downward_params = {
     'in_channels': 3, 
@@ -148,59 +143,128 @@ upward_params['emb_sizes'] = [upward_params['emb_sizes'][i]*arc_width for i in r
 upward_params['out_channels'] = [upward_params['out_channels'][i]*arc_width for i in range(min(len(upward_params['out_channels']), arc_depth))]
 output_params['in_channels'] = output_params['in_channels']*arc_width
 
-x = torch.rand(batch_size, 3, input_height, input_width)
+x = torch.rand(batch_size, 3, input_size, input_size)
 
-unet = UNet(downward_params, upward_params, output_params)
-unet_crf = nn.Sequential(
-    UNet(downward_params, upward_params, output_params),
-    CRF(n_spatial_dims=2)
-)
-out = unet(x)
-print('unet output shape', out.shape) 
-out = unet_crf(x)
-print('unet-crf output shape', out.shape) 
+if args.architecture == 'unet-crf':
+    unet = UNet(downward_params, upward_params, output_params)
+    model = nn.Sequential(
+        unet,
+        CRF(n_spatial_dims=2)
+    )
+else:
+    sys.exit("Architecture without CRF is not supported")
+
+out = model(x)
+print('output shape', out.shape) 
 
 dataset_parameters = {
-    'images': val_images,
-    'annotations': val_annotations,
-    'n_classes': n_classes,
-    'n_workers': n_workers,
-    'input_height': input_height,
-    'input_width': input_width,
-    'output_height': output_height,
-    'output_width': output_width,
+    'data_path': data_path,
+    'split': 'test',
     'data_transform': data_transform,
     'target_transform': target_transform,
-    'read_image_type': read_image_type,
-    'ignore_segs': ignore_segs,
+    'download': True,
 }
 
-dataset = get_datset('fiber', dataset_parameters)
+dataset = get_datset('oxford', dataset_parameters)
 num = int(round(len(dataset)*percentage))
 selected = list(range(num))
 dataset = Subset(dataset, selected)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=n_workers)
 
-unet = unet.to(device)
-unet_crf = unet_crf.to(device)
+if args.data_parallel:
+    model= nn.DataParallel(model)
+model = model.to(device)
 
-checkpoint = torch.load(unet_path, map_location=device)
-unet.load_state_dict(checkpoint['model_state_dict'])
+checkpoint = torch.load(model_path, map_location=device)
+model.load_state_dict(checkpoint['model_state_dict'])
 
-checkpoint = torch.load(unet_crf_path, map_location=device)
-unet_crf.load_state_dict(checkpoint['model_state_dict'])
+crf = model[1]
 
-trans_crf = nn.Sequential(
-    unet,
-    unet_crf[1]
-)
+def test_CRF(model, dataloader, num_classes, device):
+    EPS = 1e-7
+    since = time.time()
+    model.eval()   # Set model to evaluate mode
+    
+    corrects = 0
+    homogeneity = 0
+    count = 0
 
-cl_wise_iou, test_stats = test(unet, dataloader, n_classes, device)
-print('unet: ', test_stats)
-cl_wise_iou, test_stats = test(unet_crf, dataloader, n_classes, device)
-print('unet crf: ', test_stats)
+    tp = np.zeros(num_classes)
+    fp = np.zeros(num_classes)
+    fn = np.zeros(num_classes)
+    n_pixels = np.zeros(num_classes)
 
-cl_wise_iou, test_stats = test(trans_crf, dataloader, n_classes, device)
+    # Iterate over data.
+    with torch.no_grad():
+        piter = tqdm(dataloader, unit='batch')
+        for inputs, seg_masks in piter:
+            piter.set_description(f"Test ")
+
+            inputs = inputs.to(device)
+            seg_masks = seg_masks.to(device).float()
+            _, targets = torch.max(seg_masks, 1)
+            targets = targets.to(device)
+            
+            batch_size = inputs.size(0)
+            count += batch_size
+
+            outputs = model(seg_masks)
+            _, preds = torch.max(outputs, 1)
+
+            # statistics
+            corrects += torch.sum(preds == targets.data)/np.prod(preds.size())*batch_size
+            homogeneity += metrics.miss_homo(targets, preds)/np.prod(preds.size())*batch_size
+
+            pr = preds.flatten()
+            gt = targets.flatten()
+
+            for cl_i in range(num_classes):
+
+                tp[cl_i] += torch.sum((pr == cl_i) * (gt == cl_i)).item()
+                fp[cl_i] += torch.sum((pr == cl_i) * ((gt != cl_i))).item()
+                fn[cl_i] += torch.sum((pr != cl_i) * ((gt == cl_i))).item()
+                n_pixels[cl_i] += torch.sum(gt == cl_i).item()
+
+            acc = corrects.double().item() / count
+            piter.set_postfix(accuracy=100. * acc)
+
+    cl_wise_iou = tp / (tp + fp + fn + EPS)
+    n_pixels_norm = n_pixels / np.sum(n_pixels)
+    frequency_weighted_IOU = np.sum(cl_wise_iou*n_pixels_norm)
+    mean_IOU = np.mean(cl_wise_iou)
+
+    acc = corrects.double().item() / count
+    homo = homogeneity.double().item() / count
+
+    time_elapsed = time.time() - since
+    print(f'Testing complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, Test Acc: {100. * acc}, Test Iou: {mean_IOU}')
+    
+    test_stats = {
+        "test_acc": 100. * acc,
+        "test_homogeneity": homo, 
+        "test_frequency_weighted_IOU": frequency_weighted_IOU,
+        "test_mean_IOU": mean_IOU,
+    }
+
+    return cl_wise_iou, test_stats
+
+cl_wise_iou, test_stats = test_CRF(crf, dataloader, n_classes, device)
+
+dataiter = iter(dataloader)
+images, labels = next(dataiter)
+# create grid of images
+img_labels = get_label_images_from_tensor(labels, n_classes, is_one_hot=True)
+label_grid = torchvision.utils.make_grid(img_labels)
+
+with torch.no_grad():
+    preds = crf(labels.to(device)).detach().cpu()
+    img_preds = get_label_images_from_tensor(preds, n_classes, is_one_hot=True)
+    preds_grid = torchvision.utils.make_grid(img_preds)
+
+# write to tensorboard
 with SummaryWriter(log_path) as w:
-    w.add_hparams({'model_name': unet_name+'_crf_trans', 'bs': batch_size}, test_stats)
-print('crf trans: ', test_stats)
+    w.add_hparams({'name':model_name, 'condition': 'gtrue_crf'}, test_stats)
+    w.add_image('gtrue labels', label_grid)
+    w.add_image('gtrue_crf preds labels', preds_grid)
+
+print(test_stats)

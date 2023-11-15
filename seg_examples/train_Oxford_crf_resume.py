@@ -37,7 +37,7 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy -n 1 -a unet -l ce -s 9999 -p 0.1 -g 0 -f 5 -ne 2 -ln 0.01 -lr 0.001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+python seg_examples/train_Oxford_crf_resume.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-resume/CrossEntropy -n 1 -l ce -r /global/cfs/cdirs/m636/geshi/exp/Oxford/batch_size/CrossEntropy/non-crf/seed_234/0_bs_32_seed_234/iter20-10-31-2023-00:43:24.pt -a unet -s 234 -g 0 -p 1 -f 10 -ne 10 -ln 0.0 -lr 0.0001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
@@ -47,12 +47,12 @@ parser.add_argument('--experiment', '-e', type=str, required=True,
                     help='name of the experiment')
 parser.add_argument('--name', '-n', type=str, required=True, 
                     help='name of run')
-parser.add_argument('--architecture', '-a', type=str, default='unet',
-                    help='model architecture')
 parser.add_argument('--loss', '-l', type=str, default='ce',
                     help='the loss function to use')
-parser.add_argument('--resume', '-r', type=str, default=None, 
+parser.add_argument('--resume', '-r', type=str, required=True, 
                     help='resume from checkpoint')
+parser.add_argument('--architecture', '-a', type=str, default='unet',
+                    help='model architecture')
 parser.add_argument('--seed', '-s', type=int, default=None, 
                     help='which seed for random number generator to use')
 parser.add_argument('--percentage', '-p', type=float, default=1.0, 
@@ -65,7 +65,7 @@ parser.add_argument('--num_epochs', '-ne', type=int, default=20,
                     help='the number of epochs for training')
 parser.add_argument('--label_noise', '-ln', type=float, default=0.00,
                     help='the rate of noisy labels')
-parser.add_argument('--learning_rate', '-lr', type=float, default=0.001,
+parser.add_argument('--learning_rate', '-lr', type=float, default=0.0001,
                     help='the learning rate of training')
 parser.add_argument('--batch_size', '-bs', type=int, default=32,
                     help='the batch size of the data')
@@ -73,7 +73,7 @@ parser.add_argument('--arc_depth', '-ad', type=int, default=5,
                     help='the depth of the model')
 parser.add_argument('--arc_width', '-aw', type=int, default=32,
                     help='the width of the model')
-parser.add_argument('--input_size', '-ip', type=int, default=224,
+parser.add_argument('--input_size', '-ip', type=int, default=288,
                     help='the size of input')
 parser.add_argument('--test_while_train', '-t', action='store_true',
                     help='using test while train')
@@ -88,6 +88,7 @@ parser.add_argument('--verbose', action='store_true',
 
 # load and parse argument
 args = parser.parse_args()
+resume_path = args.resume
 
 if args.gpu<0 or not torch.cuda.is_available():
     device = torch.device('cpu')
@@ -106,7 +107,7 @@ else:
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
-    
+
 experiment = args.experiment
 run_name = args.name + f'_seed_{seed}'
 log_path = os.path.join(experiment, run_name)
@@ -146,10 +147,10 @@ writer = SummaryWriter(log_path)
 n_workers = 0
 classes = ('foreground', 'background', 'border')
 n_classes = len(classes)
-
+    
 print('n_classes', n_classes)
 data_transform, target_transform = get_default_transforms('oxford', input_size, n_classes, noise_level=label_noise)
-
+    
 downward_params = {
     'in_channels': 3, 
     'emb_sizes': [1, 2, 4, 8, 16], 
@@ -218,6 +219,9 @@ if args.data_parallel:
     model= nn.DataParallel(model)
 model = model.to(device)
 
+checkpoint = torch.load(resume_path, map_location=device)
+model.load_state_dict(checkpoint['model_state_dict'])
+
 if args.loss == 'iou':
     print('use IOULoss')
     criterion = metrics.IOULoss(softmax=True)
@@ -283,4 +287,3 @@ print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s,
 
 writer.flush()
 writer.close()
-

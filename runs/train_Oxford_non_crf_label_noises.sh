@@ -1,4 +1,14 @@
 #!/bin/bash
+#SBATCH -A m636
+#SBATCH -C gpu
+#SBATCH -q regular
+#SBATCH -t 8:00:00
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH -c 32
+#SBATCH --gpus-per-task=1
+#SBATCH -o logs/non_crf_label_noises.%N.%j.out # STDOUT
+#SBATCH -e logs/non_crf_label_noises.%N.%j.err # STDERR
 
 ###############################################################################
 ### setup here
@@ -15,11 +25,11 @@ module load python
 # Activate the virtual environment
 conda activate CRF_GPU_Env
 
-# # one gpu visible to each task 
-# export SLURM_CPU_BIND="cores"
+# one gpu visible to each task 
+export SLURM_CPU_BIND="cores"
 
-# # ensures that the python output sent to terminal without buffering
-# export PYTHONUNBUFFERED=1
+# ensures that the python output sent to terminal without buffering
+export PYTHONUNBUFFERED=1
 
 
 ###############################################################################
@@ -54,6 +64,8 @@ for labelnoise in "${label_noises[@]} "; do
         -t --benchmark --verbose"
 
     echo $_train_cmd
+    echo ""
+    srun -n 1 $_train_cmd &
     echo ""
     
 done

@@ -37,7 +37,7 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy -n 1 -a unet -l ce -s 9999 -p 0.1 -g 0 -f 5 -ne 2 -ln 0.01 -lr 0.001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+python seg_examples/train_Oxford_crf_trans.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/trans-crf/CrossEntropy -n 2 -l ce -rc /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-resume/CrossEntropy/0_seed_234/iter10-11-14-2023-08:39:48.pt -rn /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-resume/CrossEntropy/1_seed_234/iter10-11-14-2023-09:49:29.pt -s 234 -g 0 -p 1 -f 10 -ne 10 -ln 0.0 -lr 0.00001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
@@ -47,12 +47,12 @@ parser.add_argument('--experiment', '-e', type=str, required=True,
                     help='name of the experiment')
 parser.add_argument('--name', '-n', type=str, required=True, 
                     help='name of run')
-parser.add_argument('--architecture', '-a', type=str, default='unet',
-                    help='model architecture')
 parser.add_argument('--loss', '-l', type=str, default='ce',
                     help='the loss function to use')
-parser.add_argument('--resume', '-r', type=str, default=None, 
-                    help='resume from checkpoint')
+parser.add_argument('--resume_crf', '-rc', type=str, required=True, 
+                    help='resume from checkpoint of unet-crf')
+parser.add_argument('--resume_noncrf', '-rn', type=str, required=True, 
+                    help='resume from checkpoint of unet')
 parser.add_argument('--seed', '-s', type=int, default=None, 
                     help='which seed for random number generator to use')
 parser.add_argument('--percentage', '-p', type=float, default=1.0, 
@@ -65,7 +65,7 @@ parser.add_argument('--num_epochs', '-ne', type=int, default=20,
                     help='the number of epochs for training')
 parser.add_argument('--label_noise', '-ln', type=float, default=0.00,
                     help='the rate of noisy labels')
-parser.add_argument('--learning_rate', '-lr', type=float, default=0.001,
+parser.add_argument('--learning_rate', '-lr', type=float, default=0.0001,
                     help='the learning rate of training')
 parser.add_argument('--batch_size', '-bs', type=int, default=32,
                     help='the batch size of the data')
@@ -73,12 +73,10 @@ parser.add_argument('--arc_depth', '-ad', type=int, default=5,
                     help='the depth of the model')
 parser.add_argument('--arc_width', '-aw', type=int, default=32,
                     help='the width of the model')
-parser.add_argument('--input_size', '-ip', type=int, default=224,
+parser.add_argument('--input_size', '-ip', type=int, default=288,
                     help='the size of input')
 parser.add_argument('--test_while_train', '-t', action='store_true',
                     help='using test while train')
-parser.add_argument('--data_parallel', '-dp', action='store_true',
-                    help='using data parallel')
 parser.add_argument('--benchmark', action='store_true',
                     help='using benchmark algorithms')
 parser.add_argument('--debug', action='store_true',
@@ -88,6 +86,12 @@ parser.add_argument('--verbose', action='store_true',
 
 # load and parse argument
 args = parser.parse_args()
+
+unet_crf_path = args.resume_crf
+unet_path = args.resume_noncrf
+log_path = os.path.dirname(unet_path)
+unet_crf_name = os.path.basename(unet_crf_path)
+unet_name = os.path.basename(unet_path)
 
 if args.gpu<0 or not torch.cuda.is_available():
     device = torch.device('cpu')
@@ -106,7 +110,7 @@ else:
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
-    
+
 experiment = args.experiment
 run_name = args.name + f'_seed_{seed}'
 log_path = os.path.join(experiment, run_name)
@@ -146,10 +150,10 @@ writer = SummaryWriter(log_path)
 n_workers = 0
 classes = ('foreground', 'background', 'border')
 n_classes = len(classes)
-
+    
 print('n_classes', n_classes)
 data_transform, target_transform = get_default_transforms('oxford', input_size, n_classes, noise_level=label_noise)
-
+    
 downward_params = {
     'in_channels': 3, 
     'emb_sizes': [1, 2, 4, 8, 16], 
@@ -181,18 +185,15 @@ output_params['in_channels'] = output_params['in_channels']*arc_width
 
 x = torch.rand(batch_size, 3, input_size, input_size)
 
-if args.architecture == 'unet':
-    model = UNet(downward_params, upward_params, output_params)
-elif args.architecture == 'unet-crf':
-    unet = UNet(downward_params, upward_params, output_params)
-    model = nn.Sequential(
-        unet,
-        CRF(n_spatial_dims=2)
-    )
-else:
-    raise ValueError("Model architecture {} is not supported".format(args.architecture))
-out = model(x)
-print('output shape', out.shape) 
+unet = UNet(downward_params, upward_params, output_params)
+unet_crf = nn.Sequential(
+    UNet(downward_params, upward_params, output_params),
+    CRF(n_spatial_dims=2)
+)
+out = unet(x)
+print('unet output shape', out.shape) 
+out = unet_crf(x)
+print('unet-crf output shape', out.shape) 
 
 dataset_parameters = {
     'data_path': data_path,
@@ -214,9 +215,19 @@ if test_while_train:
     test_set = get_datset('oxford', dataset_parameters)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=n_workers)
 
-if args.data_parallel:
-    model= nn.DataParallel(model)
-model = model.to(device)
+unet = unet.to(device)
+unet_crf = unet_crf.to(device)
+
+checkpoint = torch.load(unet_path, map_location=device)
+unet.load_state_dict(checkpoint['model_state_dict'])
+
+checkpoint = torch.load(unet_crf_path, map_location=device)
+unet_crf.load_state_dict(checkpoint['model_state_dict'])
+
+model = nn.Sequential(
+    unet,
+    unet_crf[1]
+)
 
 if args.loss == 'iou':
     print('use IOULoss')
@@ -283,4 +294,3 @@ print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s,
 
 writer.flush()
 writer.close()
-
