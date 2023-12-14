@@ -104,6 +104,8 @@ else:
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(seed)
     
 experiment = args.experiment
 run_name = args.name + f'_seed_{seed}'

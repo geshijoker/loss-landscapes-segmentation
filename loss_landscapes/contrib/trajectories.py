@@ -3,119 +3,74 @@ Classes and functions for tracking a model's optimization trajectory and computi
 a low-dimensional approximation of the trajectory.
 """
 
-
+import copy
 from abc import ABC, abstractmethod
 from datetime import datetime
 import numpy as np
-from loss_landscapes.model_interface.model_interface import wrap_model
+from sklearn.decomposition import PCA
 
+import torch
+from torch import nn
 
-class TrajectoryTracker(ABC):
-    """
-    A TrajectoryTracker facilitates tracking the optimization trajectory of a
-    DL/RL model. Trajectory trackers provide facilities for storing model parameters
-    as well as for retrieving and operating on stored parameters.
-    """
+from loss_landscapes.model_interface.model_wrapper import ModelWrapper, wrap_model
+from loss_landscapes.model_interface.model_parameters import ModelParameters
 
-    @abstractmethod
-    def __getitem__(self, timestep) -> np.ndarray:
-        """
-        Returns the position of the model from the given training timestep as a numpy array.
-        :param timestep: training step of parameters to retrieve
-        :return: numpy array
-        """
-        pass
+def flatten(model_parameters):
+    parameters = [param.detach().cpu().numpy().flatten() for param in model_parameters]
+    return np.concatenate(parameters)
 
-    @abstractmethod
-    def get_item(self, timestep) -> np.ndarray:
-        """
-        Returns the position of the model from the given training timestep as a numpy array.
-        :param timestep: training step of parameters to retrieve
-        :return: numpy array
-        """
-        pass
+def reconstruct(parameters, architecture):
+    split = [np.prod(shape) for shape in architecture]
+    pos = 0
+    model_parameters = []
+    for size, shape in zip(split, architecture):
+        model_parameters.append(np.resize(parameters[pos:pos+size], shape))
+        pos += size
+    return ModelParameters(model_parameters)
 
-    @abstractmethod
-    def get_trajectory(self) -> list:
-        """
-        Returns a reference to the currently stored trajectory.
-        :return: numpy array
-        """
-        pass
+def propermap(projections, paddings, n_samples):
+    ranges = list(zip(projections.min(axis=0), projections.max(axis=0)))
+    xs = []
+    for n, padding_rate, (low, high) in zip(n_samples, paddings, ranges):
+        pad = (high-low)*padding_rate
+        xs.append(np.linspace(low-pad, high+pad, n))
+    return np.meshgrid(*xs)
 
-    @abstractmethod
-    def save_position(self, model):
-        """
-        Appends the current model parameterization to the stored training trajectory.
-        :param model: model object with current state of interest
-        :return: N/A
-        """
-        pass
-
-
-class FullTrajectoryTracker(TrajectoryTracker):
+class PCATrajectoryTracker(object):
     """
     A FullTrajectoryTracker is a tracker which stores a history of points in the tracked
     model's original parameter space, and can be used to perform a variety of computations
     on the trajectory. The tracker spills data into storage rather than keeping everything
     in main memory.
     """
-    def __init__(self, model, agent_interface=None, directory='./', experiment_name=None):
+    def __init__(self, final_model, checkpoints):
         super().__init__()
-        self.dir = directory + (experiment_name if experiment_name is not None else str(datetime.now()) + '/')
-        self.next_idx = 0
-        self.save_position(model)
-        self.agent_interface = agent_interface
+        self.final_model = final_model
+        self.checkpoints = checkpoints
+        
+        self.final_model_parameters = wrap_model(final_model).get_module_parameters()
+        self.architecture = [parameter.shape for parameter in self.final_model_parameters] 
+        print('architecture', self.architecture)
+        
+    def load_checkpoints(self, load_func):
+        self.parameters = []
+        model = copy.deepcopy(self.final_model)
+        for checkpoint in self.checkpoints:
+            load_func(model, checkpoint)
+            model_parameters = wrap_model(model).get_module_parameters()
+            self.parameters.append(flatten(model_parameters)-flatten(self.final_model_parameters))
 
-    def __getitem__(self, timestep) -> np.ndarray:
-        if not (1 <= timestep < self.next_idx):
-            raise IndexError('Given timestep does not exist.')
-        return np.load(self.dir + str(timestep) + '.npy')
+    def dim_reduction(self, n_components=2):
+        self.pca = PCA(n_components=2)
+        projections = self.pca.fit_transform(np.array(self.parameters))
+        proj_parameters = self.pca.inverse_transform(projections)
+        return projections
+    
+    def inverse_project(self, projection):
+        return self.pca.inverse_transform(projection)
 
-    def get_item(self, timestep) -> np.ndarray:
-        return self.__getitem__(timestep)
-
-    def save_position(self, model):
-        np.save(self.dir + str(self.next_idx) + '.npy', wrap_model(model, self.agent_interface).get_parameter_tensor(deepcopy=True).as_numpy())
-        self.next_idx += 1
-
-    def get_trajectory(self) -> list:
-        """
-        WARNING: be aware that full trajectory tracking requires N * M memory, where N is the
-        number of iterations tracked and M is the size of the model. The amount of memory used
-        by the trajectory tracker can easily become very large.
-        :return: list of numpy arrays
-        """
-        return [self[idx] for idx in range(self.next_idx)]
-
-
-class ProjectingTrajectoryTracker(TrajectoryTracker):
-    """
-    A ProjectingTrajectoryTracker is a tracker which applies dimensionality reduction to
-    all model parameterizations upon storage. This is particularly appropriate for large
-    models, where storing a history of points in the model's parameter space would be
-    unfeasible in terms of memory.
-    """
-    def __init__(self, model, agent_interface=None, n_bases=2):
-        super().__init__()
-        self.trajectory = []
-        self.agent_interface = agent_interface
-
-        n = wrap_model(model, agent_interface).get_parameter_tensor().numel()
-        self.A = np.column_stack(
-            [np.random.normal(size=n) for _ in range(n_bases)]
-        )
-
-    def __getitem__(self, timestep) -> np.ndarray:
-        return self.trajectory[timestep]
-
-    def get_item(self, timestep) -> np.ndarray:
-        return self.__getitem__(timestep)
-
-    def get_trajectory(self) -> list:
-        return self.trajectory
-
-    def save_position(self, model):
-        # we solve the equation Ax = b using least squares, where A is the matrix of basis vectors
-        b = wrap_model(model, self.agent_interface).get_parameter_tensor().as_numpy()
-        self.trajectory.append(np.linalg.lstsq(self.A, b, rcond=None)[0])
+    def get_components(self):
+        return copy.deepcopy(self.pca.components_)
+    
+    def get_explained_variance_ratio(self):
+        return copy.deepcopy(self.pca.explained_variance_ratio_)

@@ -30,7 +30,7 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/eval_Oxford_unetnocrf.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy/0_seed_9999/iter512-10-16-2023-17:13:04.pt -a unet-crf -s 9999 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
+python seg_examples/eval_Oxford_unetnocrf.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy/0_seed_9999/iter30-11-17-2023-19:03:26.pt -a unet-crf -s 9999 -g 0 -p 1 -ad 5 -aw 32 -ip 224 -bs 32 --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model testing')
@@ -87,6 +87,8 @@ else:
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(seed)
 
 # set up benchmark running
 if args.benchmark:
@@ -111,7 +113,7 @@ n_workers = 0
 classes = ('foreground', 'background', 'border')
 n_classes = len(classes)
 
-data_transform, target_transform = get_default_transforms('oxford', input_size)
+data_transform, target_transform = get_default_transforms('oxford', input_size, n_classes, noise_level=0.0)
     
 downward_params = {
     'in_channels': 3, 

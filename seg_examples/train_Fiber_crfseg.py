@@ -61,6 +61,8 @@ parser.add_argument('--frequency', '-f', type=int, default=0,
                     help='for every # epochs to save checkpoints')
 parser.add_argument('--num_epochs', '-ne', type=int, default=20,
                     help='the number of epochs for training')
+parser.add_argument('--label_noise', '-ln', type=float, default=0.00,
+                    help='the rate of noisy labels')
 parser.add_argument('--learning_rate', '-lr', type=float, default=0.0001,
                     help='the learning rate of training')
 parser.add_argument('--batch_size', '-bs', type=int, default=32,
@@ -102,6 +104,8 @@ else:
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(seed)
     
 experiment = args.experiment
 run_name = args.name + f'_seed_{seed}'
@@ -129,6 +133,7 @@ input_size = args.input_size
 batch_size=args.batch_size
 arc_width = args.arc_width
 arc_depth = args.arc_depth
+label_noise = args.label_noise
 lr = args.learning_rate
 test_while_train = args.test_while_train
 frequency = args.frequency

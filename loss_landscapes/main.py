@@ -334,7 +334,7 @@ class PlanarLossLandscape(LossLandscape):
         """
         The planar subspace of the parameter space defined by two precomputed direction and distance.
 
-        Given a user defined direction and distance, draw loss landscape the plain defined by two directions.
+        Given a user defined direction and distance, draw loss landscape the plane defined by two directions.
 
         :param dir_one: the precomputed direction 1 given by the user
         :param dir_two: the precomputed direction 2 given by the user
@@ -371,7 +371,7 @@ class PlanarLossLandscape(LossLandscape):
             self.dir_one.truediv_(self.steps / 2)
             self.dir_two.truediv_(self.steps / 2)
 
-    def random_plain(self, distance: float, normalization='filter', random='uniform', centered=True):
+    def random_plane(self, distance: float, normalization='filter', random='uniform', centered=True):
         """
         :param distance: maximum distance in parameter space from the start point
         :param normalization: normalization of direction other, must be one of 'filter', 'layer', 'model'

@@ -37,20 +37,18 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Oxford_crf_resume.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/crf-resume/CrossEntropy -n 1 -l ce -r /global/cfs/cdirs/m636/geshi/exp/Oxford/batch_size/CrossEntropy/non-crf/seed_234/0_bs_32_seed_234/iter20-10-31-2023-00:43:24.pt -a unet -s 234 -g 0 -p 1 -f 10 -ne 10 -ln 0.0 -lr 0.0001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+python seg_examples/train_Oxford_crf_resume.py -d /global/cfs/cdirs/m636/geshi/data/ -r /global/cfs/cdirs/m636/geshi/exp/Oxford/batch_size/CrossEntropy/non-crf/seed_234/0_bs_32_seed_234/iter20-10-31-2023-00:43:24.pt -l ce -a unet -s 234 -g 3 -p 1 -f 10 -ne 10 -ln 0.0 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
 parser.add_argument('--data', '-d', type=str, required=True,
                     help='data folder to load data')
-parser.add_argument('--experiment', '-e', type=str, required=True,
-                    help='name of the experiment')
-parser.add_argument('--name', '-n', type=str, required=True, 
-                    help='name of run')
-parser.add_argument('--loss', '-l', type=str, default='ce',
-                    help='the loss function to use')
 parser.add_argument('--resume', '-r', type=str, required=True, 
                     help='resume from checkpoint')
+parser.add_argument('--event', '-e', type=str, default='resume',
+                    help='the subdirectory for writer events')
+parser.add_argument('--loss', '-l', type=str, default='ce',
+                    help='the loss function to use')
 parser.add_argument('--architecture', '-a', type=str, default='unet',
                     help='model architecture')
 parser.add_argument('--seed', '-s', type=int, default=None, 
@@ -65,8 +63,6 @@ parser.add_argument('--num_epochs', '-ne', type=int, default=20,
                     help='the number of epochs for training')
 parser.add_argument('--label_noise', '-ln', type=float, default=0.00,
                     help='the rate of noisy labels')
-parser.add_argument('--learning_rate', '-lr', type=float, default=0.0001,
-                    help='the learning rate of training')
 parser.add_argument('--batch_size', '-bs', type=int, default=32,
                     help='the batch size of the data')
 parser.add_argument('--arc_depth', '-ad', type=int, default=5,
@@ -107,16 +103,19 @@ else:
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(seed)
 
-experiment = args.experiment
-run_name = args.name + f'_seed_{seed}'
-log_path = os.path.join(experiment, run_name)
+model_path = args.resume
+log_path = os.path.dirname(model_path)
+model_name = os.path.basename(model_path)
+event = args.event
 
 if os.path.isdir(log_path):
-    sys.exit('The name of the run has alrealy exist')
+    print(f'The name of the run alrealy exists, save to {log_path}')
 else:
     check_make_dir(log_path)
-sys.stdout = open(os.path.join(log_path, 'log.txt'), 'w')
+sys.stdout = open(os.path.join(log_path, 'log.txt'), 'a+')
 
 # set up benchmark running
 if args.benchmark:
@@ -130,7 +129,6 @@ else:
     torch.autograd.set_detect_anomaly(False)
     
 data_path = args.data
-lr = args.learning_rate
 input_size = args.input_size
 batch_size=args.batch_size
 arc_width = args.arc_width
@@ -142,7 +140,7 @@ num_epochs = args.num_epochs
 percentage = args.percentage
 assert percentage>0 and percentage<=1, "The percentage is out of range of (0, 1)"
 
-writer = SummaryWriter(log_path)
+writer = SummaryWriter(os.path.join(log_path, event))
 
 n_workers = 0
 classes = ('foreground', 'background', 'border')
@@ -219,8 +217,8 @@ if args.data_parallel:
     model= nn.DataParallel(model)
 model = model.to(device)
 
-checkpoint = torch.load(resume_path, map_location=device)
-model.load_state_dict(checkpoint['model_state_dict'])
+# checkpoint = torch.load(resume_path, map_location=device)
+# model.load_state_dict(checkpoint['model_state_dict'])
 
 if args.loss == 'iou':
     print('use IOULoss')
@@ -235,12 +233,19 @@ else:
     print(f'{args.loss} not supported, use default CrossEntropyLoss')
     criterion = nn.CrossEntropyLoss() 
 
-optimizer = optim.AdamW(model.parameters(), lr=lr)
+optimizer = optim.AdamW(model.parameters())
 scheduler = lr_scheduler.StepLR(optimizer, step_size=20)
 
-since = time.time()
-model.train()   # Set model to evaluate mode
-start_epoch = 0
+def load_checkpoint(model_path):
+    checkpoint = torch.load(model_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    torch.set_rng_state(checkpoint['rng_state'].cpu())
+    start_epoch = checkpoint['iteration']
+    return model, scheduler, optimizer, start_epoch
+
+model, scheduler, optimizer, start_epoch = load_checkpoint(model_path)
 
 def save_checkpoint(checkpoint):
     utctime = datetime.datetime.now(datetime.timezone.utc).strftime("%m-%d-%Y-%H:%M:%S")
@@ -253,12 +258,9 @@ def save_checkpoint(checkpoint):
         'iteration': checkpoint,
         }, model_path)
 
-save_checkpoint('init')
-
 print('Starting training loop; initial compile can take a while...')
 since = time.time()
 model.train()   # Set model to evaluate mode
-start_epoch = 0
 
 pbar = trange(num_epochs, desc='Epoch', unit='epoch', initial=start_epoch, position=0)
 # Iterate over data.
@@ -268,19 +270,19 @@ for epoch in pbar:
         cl_wise_iou, test_stats = test(model, test_loader, n_classes, device)
 
     if writer:
-        writer.add_scalar('time eplased', time.time() - since, epoch)
+        writer.add_scalar('time eplased', time.time() - since, epoch+start_epoch)
         for stat in train_stats:
-            writer.add_scalar(stat, train_stats[stat], epoch)
+            writer.add_scalar(stat, train_stats[stat], epoch+start_epoch)
         if test_while_train:
             for stat in test_stats:
-                writer.add_scalar(stat, test_stats[stat], epoch)
+                writer.add_scalar(stat, test_stats[stat], epoch+start_epoch)
             for cl_i in range(len(cl_wise_iou)):
-                writer.add_scalar(f'class_{classes[cl_i]}_iou', cl_wise_iou[cl_i], epoch)
+                writer.add_scalar(f'class_{classes[cl_i]}_iou', cl_wise_iou[cl_i], epoch+start_epoch)
 
     pbar.set_postfix(loss = epoch_loss, acc = epoch_acc)
         
     if epoch+1==num_epochs or (frequency>0 and (epoch+1)%frequency==0):
-        save_checkpoint(epoch+1)
+        save_checkpoint(epoch+start_epoch+1)
 
 time_elapsed = time.time() - since
 print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s, last epoch loss: {epoch_loss}, acc: {epoch_acc}')

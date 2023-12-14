@@ -86,6 +86,8 @@ else:
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(seed)
 
 # set up benchmark running
 if args.benchmark:

@@ -9,12 +9,18 @@ from torch.nn.modules.loss import _Loss
 from torch.utils.data import DataLoader
 import numpy as np
 
+from sklearn.decomposition import PCA, IncrementalPCA
+
 from loss_landscapes.model_interface.model_wrapper import ModelWrapper, wrap_model
 from loss_landscapes.model_interface.model_parameters import ModelParameters, rand_u_like, rand_n_like
 from loss_landscapes.metrics.metric import Metric
 
 def log_refined_loss(loss):
     return np.log(1.+loss)
+
+def gram_schmidt_columns(X):
+    Q, R = np.linalg.qr(X)
+    return Q
 
 class SimpleWarmupCaller(object):
     def __init__(self, data_loader: DataLoader, device: typing.Union[None, Device] = None, start=0):
@@ -131,3 +137,26 @@ def _pacbayes_sigma(
             lower = sigma
     return sigma
 
+# def iPCA_directions(tracker, n_components=2, batch_size=1):
+#     for checkpoint in tracker:
+#         checkpoint.get_parameter_tensor(deepcopy=True).as_numpy()
+#         pca = IncrementalPCA(n_components=n_components, batch_size=batch_size)
+#         pca.partial_fit(X)
+
+# def PCA_directions(tracker, n_components=2):
+#     params = []
+#     for checkpoint in tracker:
+#         param = checkpoint.get_parameter_tensor(deepcopy=True).as_numpy()
+#     X = torch.stack(params, dim=0) 
+#     pca = PCA(n_components=n_components)
+#     pca.fit(X)
+    
+#     checkpoint = tracker.get_base()
+#     param = checkpoint.get_parameter_tensor(deepcopy=True).as_numpy()
+#     checkpoint.restore(param)
+#     for checkpoint in tracker:
+#         param = checkpoint.get_parameter_tensor(deepcopy=True).as_numpy()
+#         pca.transform(param)
+#         checkpoint.restore(param)
+        
+#     return pca.components_, pca.singular_values_ pca.explained_variance_ratio_

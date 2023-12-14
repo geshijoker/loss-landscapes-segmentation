@@ -86,6 +86,8 @@ else:
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(seed)
 
 # set up benchmark running
 if args.benchmark:
@@ -151,14 +153,14 @@ output_params['in_channels'] = output_params['in_channels']*arc_width
 
 x = torch.rand(batch_size, 3, input_height, input_width)
 
-if args.architecture == 'unet':
-    model = UNet(downward_params, upward_params, output_params)
-elif args.architecture == 'unet-crf':
+if args.architecture == 'unet-crf':
     unet = UNet(downward_params, upward_params, output_params)
     model = nn.Sequential(
         unet,
         CRF(n_spatial_dims=2)
     )
+else:
+    sys.exit("Architecture without CRF is not supported")
 out = model(x)
 print('output shape', out.shape) 
 

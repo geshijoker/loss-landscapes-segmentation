@@ -37,7 +37,7 @@ from segmentationCRF.crfseg import CRF
 
 """
 example command to run:
-python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/non-crf/CrossEntropy -n 1 -a unet -l ce -s 9999 -p 0.1 -g 0 -f 5 -ne 2 -ln 0.01 -lr 0.001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy -n 0 -a unet-crf -l ce -s 9999 -p 1 -g 0 -f 5 -ne 30 -ln 0.0 -lr 0.001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
@@ -106,6 +106,8 @@ else:
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(seed)
     
 experiment = args.experiment
 run_name = args.name + f'_seed_{seed}'
