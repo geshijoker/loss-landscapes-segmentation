@@ -46,7 +46,7 @@ for lr in "${learning_rates[@]} "; do
     
     _train_cmd="python -u /global/u2/g/geshi/loss-landscapes-segmentation/seg_examples/train_Oxford_crfseg.py \
         -d /global/cfs/cdirs/m636/geshi/data/ \
-        -e /global/cfs/cdirs/m636/geshi/exp/Oxford/learning_rate/CrossEntropy/non-crf/seed_$seed \
+        -e /global/cfs/cdirs/m636/geshi/exp/Oxford/trajectory/CrossEntropy/non-crf/seed_$seed \
         -n 0_lr_${lr/"."/""}\
         -a unet \
         -l ce \
@@ -54,7 +54,7 @@ for lr in "${learning_rates[@]} "; do
         -p 1 \
         -g 0 \
         -f 20 \
-        -ne 20 \
+        -ne 30 \
         -lr $lr \
         -bs 32 \
         -ad 5 \

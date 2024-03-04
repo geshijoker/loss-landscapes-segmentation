@@ -36,8 +36,9 @@ from segmentationCRF import train_epoch, test
 from segmentationCRF.crfseg import CRF
 
 """
+234, 3376, 5370, 7026, 8049
 example command to run:
-python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/crf/CrossEntropy -n 0 -a unet-crf -l ce -s 9999 -p 1 -g 0 -f 5 -ne 30 -ln 0.0 -lr 0.001 -bs 32 -ad 5 -aw 32 -ip 224 -t --benchmark --verbose
+python seg_examples/train_Oxford_crfseg.py -d /global/cfs/cdirs/m636/geshi/data/ -e /global/cfs/cdirs/m636/geshi/exp/Oxford/trajectory/non-crf/CrossEntropy -n 0 -a unet -l ce -s 3376 -p 1 -g 3 -f 1 -ne 30 -ln 0.0 -lr 0.001 -bs 32 -ad 5 -aw 16 -ip 224 -t --benchmark --verbose
 """
 
 parser = argparse.ArgumentParser(description='Model training')
@@ -251,7 +252,7 @@ def save_checkpoint(checkpoint):
         'iteration': checkpoint,
         }, model_path)
 
-save_checkpoint('init')
+save_checkpoint(0)
 
 print('Starting training loop; initial compile can take a while...')
 since = time.time()

@@ -5,7 +5,7 @@ from torch import Tensor
 from torchviz import make_dot
 from torchinfo import summary
 
-from segmentationCRF.model_utils import UnetDoubleConvBlock, UnetUpBlock, UnetOutputBlock, UnetEncoder, UnetDecoder
+from segmentationCRF.model_utils import UnetDoubleConvBlock, UnetUpBlock, UnetOutputBlock, UnetEncoder, UnetDecoder, Encoder, Decoder
 
 class UNet(nn.Module):
     def __init__(self, downward_params, upward_params, output_params):
@@ -17,6 +17,19 @@ class UNet(nn.Module):
     def forward(self, img_input: Tensor):
         img_input, levels = self.encoder(img_input)
         x = self.decoder(levels)
+        x = self.classifier(x)
+        return x
+    
+class EncoderDecoder(nn.Module):
+    def __init__(self, downward_params, upward_params, output_params):
+        super().__init__()
+        self.encoder = Encoder(**downward_params)
+        self.decoder = Decoder(**upward_params)
+        self.classifier = UnetOutputBlock(**output_params)
+
+    def forward(self, img_input: Tensor):
+        x = self.encoder(img_input)
+        x = self.decoder(x)
         x = self.classifier(x)
         return x
 

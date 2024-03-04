@@ -64,3 +64,28 @@ class UnetOutputBlock(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return self.classifier(x)
+    
+class DownBlock(nn.Module):
+    def __init__(self, in_channels: int, n_filters: int, out_channels: int, kernel_size: int, padding: int, batch_norm_first: bool=True):
+        super().__init__()
+        self.conv_proj = UnetDoubleConvBlock(in_channels, n_filters, out_channels, kernel_size, padding, batch_norm_first)
+        self.pool = nn.MaxPool2d(2)
+
+    def forward(self, x: Tensor):
+        x = self.conv_proj(x)
+        x = self.pool(x)
+        return x
+
+class UpBlock(nn.Module):
+    def __init__(self, in_channels: int, n_filters: int, out_channels: int, bilinear: bool=True, **kwargs):
+        super().__init__()
+        self.conv_proj = UnetDoubleConvBlock(in_channels, n_filters, out_channels, **kwargs)
+        if bilinear:
+            self.up = nn.Upsample(scale_factor=2, mode='bilinear')
+        else:
+            self.up = nn.ConvTranspose2d(out_channels, out_channels, kernel_size=kwargs['kernel_size'], stride=2, bias=False, padding=1, output_padding=1)
+
+    def forward(self, x: Tensor):
+        x = self.conv_proj(x)
+        x = self.up(x)
+        return x
