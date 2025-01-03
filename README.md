@@ -150,7 +150,7 @@ pll.warm_up(metric)
 landscape = pll.compute(metric)
 ````
 
-## 5. Loss Landscape on an Entire Dataset Instead of a Mini-batch
+## 6. Loss Landscape on an Entire Dataset Instead of a Mini-batch
 The original code base does not support change the computing device and only able to compute the loss of a mini-batch of data. We design the loss landscape computation tool to support easy deployment on GPU and evaluation on the entire dataset instead of just on mini-batches. We implemented `eval_warm_up()` and `eval_loss()` to do `warmup` and `compute` on a `Torch::DataLoader` in [core-features-modified.ipynb](examples/core-features-modified.ipynb). The example from section 2 for a  becomes as follows:  
 
 ````python
